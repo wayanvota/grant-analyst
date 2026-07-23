@@ -1,5 +1,13 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1784838913051,
+      "tag": "0000_absent_sabretooth",
+      "breakpoints": true
+    }
+  ]
 }

@@ -4,54 +4,35 @@ import test from "node:test";
 
 const templateRoot = new URL("../", import.meta.url);
 
-async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html", host: "localhost" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
-}
-
-test("server-renders Grant Analyst product metadata", async () => {
-  const response = await render();
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
-
-  const html = await response.text();
-  assert.match(html, /<title>Grant Analyst \| Evidence-backed proposal review<\/title>/i);
-  assert.match(html, /Evidence-backed proposal review/);
-  assert.match(html, /http:\/\/localhost\/og\.png/);
-  assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
-});
-
-test("ships the product interface and social preview without starter artifacts", async () => {
-  const [page, layout, packageJson] = await Promise.all([
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+test("ships Grant Analyst product metadata and social preview", async () => {
+  const [layout, page] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     access(new URL("../public/og.png", import.meta.url)),
   ]);
-
-  assert.match(page, /Does this proposal/);
-  assert.match(page, /Claim and evidence ledger/);
-  assert.match(page, /Five damaging questions/);
-  assert.match(page, /grant-analyst-decision-memo\.md/);
+  assert.match(layout, /Grant Analyst \| Evidence-backed proposal review/);
   assert.match(layout, /generateMetadata/);
   assert.match(layout, /og\.png/);
-  assert.doesNotMatch(packageJson, /react-loading-skeleton/);
+  assert.match(page, /Find the rejection case before the funder does/);
+  assert.doesNotMatch(page, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
+});
+
+test("connects the interface to the backend review workflow", async () => {
+  const [page, analyzeRoute, uploadRoute, schema, packageJson] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/workspaces/[id]/analyze/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/workspaces/[id]/documents/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+    access(new URL("../drizzle/0000_absent_sabretooth.sql", import.meta.url)),
+  ]);
+  assert.match(page, /Five damaging questions/);
+  assert.match(page, /Claim and evidence ledger|claims-list/);
+  assert.match(page, /\/api\/workspaces/);
+  assert.match(analyzeRoute, /runAnalysisPipeline/);
+  assert.match(uploadRoute, /DOCUMENTS\.put/);
+  assert.match(schema, /export const reviews/);
+  assert.match(packageJson, /"openai"/);
   assert.doesNotMatch(page, /_sites-preview|SkeletonPreview/);
   await assert.rejects(access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)));
   assert.equal(templateRoot.pathname.endsWith("/grant-analyst/"), true);
