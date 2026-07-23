@@ -1,67 +1,112 @@
 # Grant Analyst
 
-Grant Analyst is a private, evidence-first pre-submission review tool. It tests
-proposal merit, eligibility, funder fit, evidence quality, and competitive
-readiness. Its recommendation is an assessment, not a prediction of funding.
+Grant Analyst is an evidence-first pre-submission review tool for grant
+proposals. It tests eligibility, proposal merit, funder fit, evidence quality,
+and competitive readiness. It does not predict whether a grant will be funded.
 
-## MVP workflow
+The public architecture deliberately separates presentation from privileged
+services:
 
-1. Create one workspace for an organization, funder, and opportunity.
-2. Paste or upload the proposal, funder materials, and supporting evidence.
-3. Run a five-stage review:
-   - structured fact extraction
+```text
+wayan.com/grant-analyst (static files)
+                 |
+                 v
+       Render Express API
+          |            |
+          v            v
+    Neon Postgres   OpenAI API
+```
+
+The static frontend contains no database credentials or AI keys. Render is the
+only component allowed to access Neon and OpenAI.
+
+## What the MVP does
+
+1. Creates a browser-private workspace for one proposal and opportunity.
+2. Accepts pasted text or PDF, Office, text, and spreadsheet files.
+3. Runs five review stages:
+   - fact extraction and eligibility checks
    - current public funder research
-   - proposal due diligence and claim testing
+   - proposal and claim due diligence
    - skeptical reviewer simulation
    - final adjudication and citation audit
-4. Review the decision, weighted scorecard, claim ledger, rejection case,
-   source audit, and prioritized revisions.
-5. Correct extracted facts, re-run the analysis, compare versions, and export
-   Markdown or JSON.
+4. Shows the decision, diagnostic scorecard, claim ledger, strongest rejection
+   case, public sources, and revision priorities.
+5. Records corrected facts, preserves review versions, and exports Markdown or
+   JSON.
 
-## Architecture
+## Repository layout
 
-- Next.js-compatible UI and API routes built with vinext
-- OpenAI Responses API with schema-validated outputs
-- OpenAI web search for current public funder research
-- Cloudflare D1 for workspaces, reviews, facts, claims, sources, and audit events
-- Cloudflare R2 for private source documents
-- Sites identity headers for per-user ownership and private access
+- `frontend/`: React and Vite static frontend
+- `frontend/dist/`: generated FTP-ready files, ignored by Git
+- `backend/`: Express API for Render
+- `backend/migrations/`: Neon Postgres schema
+- `public/config.js`: runtime API URL copied into the frontend build
+- `render.yaml`: Render Blueprint
+- `docs/deployment.md`: deployment instructions
 
-## Local setup
+## Local development
 
 Requires Node.js 22.13 or newer.
 
 ```bash
 npm install
-cp .env.example .env.local
-npm run db:generate
-npm run dev
+cp backend/.env.example .env.local
+npm run migrate
+npm run dev:backend
 ```
 
-Add a project API key to `OPENAI_API_KEY` in `.env.local`. Never commit that
-file. The default models are `gpt-5.6` for analysis and `gpt-5.6-terra` for the
-faster extraction stage.
-
-## Verification
+In another terminal:
 
 ```bash
-npx tsc --noEmit
-npm run lint
-npm test
+npm run dev:frontend
 ```
 
-The generated D1 migration is in `drizzle/`. Production environment variables
-are managed by Sites and are separate from `.env.local`.
+For local development, change `public/config.js` to:
 
-## API surface
+```js
+window.GRANT_ANALYST_CONFIG = {
+  apiBase: "http://localhost:10000"
+};
+```
 
-- `GET/POST /api/workspaces`
-- `GET/PATCH/DELETE /api/workspaces/:id`
-- `POST /api/workspaces/:id/documents`
-- `DELETE /api/documents/:id`
-- `POST /api/workspaces/:id/analyze`
-- `GET /api/reviews/:id`
-- `GET /api/reviews/:id/export?format=markdown|json`
-- `POST /api/workspaces/:id/corrections`
-- `GET /api/health`
+Never commit `.env.local`.
+
+## Build and verify
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+The FTP artifact is the contents of `frontend/dist/`, not the directory itself.
+
+## Public-demo safeguards
+
+The backend includes:
+
+- strict CORS allowlisting
+- helmet security headers
+- IP request throttling
+- a random browser bearer session stored only in the browser
+- a peppered session hash in Neon
+- per-browser and global daily review quotas
+- document count and size limits
+- server-only OpenAI and Neon credentials
+- prompt-injection defenses for uploaded documents
+- ownership checks on every workspace, document, review, correction, and export
+
+The browser session is lightweight pseudonymous access, not full
+authentication. Do not invite users to submit confidential proposals until you
+add an identity provider and a clear retention policy.
+
+## Deploy
+
+Follow [docs/deployment.md](docs/deployment.md) for Neon, Render, FTP, and
+verification steps.
+
+## Open source
+
+MIT licensed. Forks should replace the API URL, set their own CORS origins and
+usage limits, and supply their own Neon and OpenAI credentials.
