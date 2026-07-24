@@ -78,7 +78,7 @@ Public funder intelligence:\n${JSON.stringify(funderResearch, null, 2)}
 Conduct the full due diligence review.`),
     schema: DueDiligenceSchema,
     schemaName: "proposal_due_diligence",
-    effort: "high",
+    effort: "medium",
     ownerHash,
   });
 
@@ -95,7 +95,7 @@ Due diligence:\n${JSON.stringify(dueDiligence, null, 2)}`,
     }],
     schema: ReviewerPanelSchema,
     schemaName: "skeptical_reviewer_panel",
-    effort: "high",
+    effort: "medium",
     ownerHash,
   });
 
@@ -113,7 +113,7 @@ Reviewer panel:\n${JSON.stringify(reviewerPanel, null, 2)}`,
     }],
     schema: AdjudicationSchema,
     schemaName: "grant_adjudication",
-    effort: "high",
+    effort: "medium",
     ownerHash,
   });
 

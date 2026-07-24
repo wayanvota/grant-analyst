@@ -82,6 +82,28 @@ npm run build
 
 The FTP artifact is the contents of `frontend/dist/`, not the directory itself.
 
+## Production tests
+
+The free production suite checks the public frontend, static assets, Render
+health and metadata, security headers, CORS, browser-session enforcement,
+workspace isolation, validation, Neon CRUD, and cleanup:
+
+```bash
+npm run test:live
+```
+
+The paid suite is opt-in and never runs in normal CI. It starts exactly three
+full five-stage OpenAI reviews with synthetic proposals, validates their
+structured results and model IDs, and deletes the test workspaces and OpenAI
+files afterward:
+
+```bash
+RUN_PAID_OPENAI_TESTS=1 PAID_TEST_RUNS=3 npm run test:paid-live
+```
+
+Do not set `RUN_PAID_OPENAI_TESTS=1` unless the account owner has approved the
+OpenAI charges.
+
 ## Public-demo safeguards
 
 The backend includes:

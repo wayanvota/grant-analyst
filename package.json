@@ -17,6 +17,8 @@
     "build": "npm run build --workspace frontend && npm run build --workspace backend",
     "build:ftp": "npm run build --workspace frontend",
     "test": "npm test --workspace backend && npm test --workspace frontend",
+    "test:live": "node --test tests/live-smoke.test.mjs",
+    "test:paid-live": "node --test tests/paid-analysis.test.mjs",
     "lint": "npm run lint --workspace frontend && npm run lint --workspace backend",
     "migrate": "npm run migrate --workspace backend"
   },

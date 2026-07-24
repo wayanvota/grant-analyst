@@ -10,8 +10,8 @@ export const config = {
   port: integer("PORT", 10000),
   databaseUrl: process.env.DATABASE_URL || "",
   openaiApiKey: process.env.OPENAI_API_KEY || "",
-  analysisModel: process.env.OPENAI_ANALYSIS_MODEL || "gpt-5.6-sol",
-  fastModel: process.env.OPENAI_FAST_MODEL || "gpt-5.6-terra",
+  analysisModel: process.env.OPENAI_ANALYSIS_MODEL || "gpt-5.6-terra",
+  fastModel: process.env.OPENAI_FAST_MODEL || "gpt-5.6-luna",
   sessionPepper: process.env.SESSION_PEPPER || (process.env.NODE_ENV === "test" ? "test-session-pepper" : ""),
   corsOrigins: (process.env.CORS_ORIGINS || "https://wayan.com,https://www.wayan.com,http://localhost:5173")
     .split(",")
