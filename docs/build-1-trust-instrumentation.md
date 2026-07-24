@@ -1,7 +1,7 @@
 # Build 1: Trust Instrumentation
 
-**Status:** Implemented and verified locally  
-**Production status:** Not migrated or deployed  
+**Status:** Implemented and verified  
+**Production status:** Neon migration applied and Render backend deployed on July 24, 2026  
 **Baseline:** [Grant Analyst Trust Baseline](trust-baseline.md)
 
 ## What this build changes
@@ -73,7 +73,9 @@ Migration `003_trust_manifest.sql` adds the manifest and completion fields. A da
 1. A stored analysis manifest cannot be changed.
 2. The manifest embedded in `reviews.result` must match `reviews.analysis_manifest`.
 
-The migration has been reviewed and tested as a file. It has not been applied to Neon.
+The migration has been applied to Neon. Production verification confirmed all five
+columns, both integrity constraints, the migration record, and the enabled
+immutability trigger.
 
 ## Sanitized fixtures
 
@@ -91,7 +93,7 @@ The local fixture set now covers:
 
 The fixtures are synthetic and contain no direct contact information.
 
-## Local release checks
+## Release checks
 
 The build must pass:
 
@@ -102,7 +104,9 @@ npm run build
 git diff --check
 ```
 
-Production smoke and paid OpenAI tests are deferred until the owner approves the migration and deployment.
+The local suite passed 20 backend tests and 2 frontend tests, lint, the production
+build, and `git diff --check`. The free production smoke suite passed after the
+Render deployment. Paid OpenAI analysis was not run as part of this release.
 
 ## Remaining P0 work
 
