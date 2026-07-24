@@ -36,6 +36,17 @@ materials.
 The API records a queued review in Neon and processes it after returning HTTP
 202. The frontend polls the review record for stage changes.
 
+The analysis uses two layers. Layer one runs proposal extraction and due
+diligence alongside public funder research. Funder research is cached in Neon
+for 14 days, and concurrent reviews for the same opportunity share a single
+research request. Layer two combines skeptical reviewer simulation, final
+adjudication, citation audit, and revision ranking.
+
+Each OpenAI request has a strict time budget. If a layer misses its budget, the
+API returns a conservative structured safeguard result marked `partial`, with
+the limitation visible in the interface and exported report. The application
+does not silently treat a timeout as a complete assessment.
+
 This MVP runs jobs inside the Render web process. A deployment or process
 failure can interrupt an active review. On startup, the API marks abandoned
 reviews as failed. A higher-volume production system should use a durable queue

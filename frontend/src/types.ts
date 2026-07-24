@@ -30,6 +30,10 @@ export type Bundle = {
 };
 export type Analysis = {
   generated_at: string;
+  pipeline?: {
+    version: string; partial: boolean; warnings: string[]; funder_cache: string;
+    layer_1_ms: number; layer_2_ms: number; total_ms: number;
+  };
   adjudication: {
     recommendation: string; proposal_merit: string; eligibility: string; eligibility_basis: string;
     funder_fit: string; competitive_readiness: string; confidence: string; diagnostic_score: number;

@@ -20,6 +20,10 @@ export const config = {
   maxDailyReviews: integer("MAX_DAILY_REVIEWS", 20),
   maxSessionDailyReviews: integer("MAX_SESSION_DAILY_REVIEWS", 2),
   maxUploadBytes: integer("MAX_UPLOAD_MB", 15) * 1024 * 1024,
+  funderCacheDays: integer("FUNDER_CACHE_DAYS", 14),
+  proposalTimeoutMs: integer("PROPOSAL_TIMEOUT_MS", 28000),
+  funderTimeoutMs: integer("FUNDER_TIMEOUT_MS", 18000),
+  decisionTimeoutMs: integer("DECISION_TIMEOUT_MS", 26000),
 };
 
 export function assertRuntimeConfig() {

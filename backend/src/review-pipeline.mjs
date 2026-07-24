@@ -1,11 +1,9 @@
 import { config } from "./config.mjs";
+import { fallbackDecision, fallbackFunderResearch, fallbackProposalAssessment } from "./fast-fallbacks.mjs";
+import { getOrResearchFunder } from "./funder-cache.mjs";
 import { parseStructured } from "./openai-client.mjs";
-import {
-  AdjudicationSchema, DueDiligenceSchema, FactExtractionSchema, FunderResearchSchema, ReviewerPanelSchema,
-} from "./schemas.mjs";
-import {
-  ADJUDICATION_PROMPT, DUE_DILIGENCE_PROMPT, FACT_EXTRACTION_PROMPT, FUNDER_RESEARCH_PROMPT, REVIEWER_PROMPT,
-} from "./prompts.mjs";
+import { FastDecisionSchema, FunderResearchSchema, ProposalAssessmentSchema } from "./schemas.mjs";
+import { FAST_DECISION_PROMPT, FUNDER_RESEARCH_PROMPT, PROPOSAL_ASSESSMENT_PROMPT } from "./prompts.mjs";
 
 function fileContent(documents, intro) {
   return [
@@ -20,7 +18,16 @@ function fileContent(documents, intro) {
   ];
 }
 
-export async function runAnalysisPipeline({ workspace, documents, ownerHash, onStage }) {
+function elapsed(startedAt) {
+  return Date.now() - startedAt;
+}
+
+export async function runAnalysisPipeline(
+  { workspace, documents, ownerHash, onStage },
+  services = { parseStructured, getOrResearchFunder },
+) {
+  const totalStartedAt = Date.now();
+  const warnings = [];
   const context = {
     organization: workspace.organization,
     funder: workspace.funder,
@@ -33,98 +40,94 @@ export async function runAnalysisPipeline({ workspace, documents, ownerHash, onS
     proposal_version: workspace.proposal_version,
   };
 
-  await onStage("extracting_facts");
-  const facts = await parseStructured({
-    model: config.fastModel,
-    instructions: FACT_EXTRACTION_PROMPT,
-    content: fileContent(documents, `Workspace facts:\n${JSON.stringify(context, null, 2)}\nExtract facts from the attached materials.`),
-    schema: FactExtractionSchema,
-    schemaName: "grant_fact_extraction",
+  await onStage("analyzing_inputs");
+  const layer1StartedAt = Date.now();
+  const assessmentPromise = services.parseStructured({
+    model: config.analysisModel,
+    instructions: PROPOSAL_ASSESSMENT_PROMPT,
+    content: fileContent(
+      documents,
+      `Workspace facts:\n${JSON.stringify(context, null, 2)}\nComplete the factual extraction and proposal assessment.`,
+    ),
+    schema: ProposalAssessmentSchema,
+    schemaName: "proposal_assessment_fast",
     effort: "low",
     ownerHash,
+    timeoutMs: config.proposalTimeoutMs,
+  }).catch((error) => {
+    warnings.push(`Proposal assessment used a safeguard result: ${error instanceof Error ? error.message : "timed analysis failed"}`);
+    return fallbackProposalAssessment(workspace, documents, error);
   });
 
-  await onStage("researching_funder");
-  const funderResearch = await parseStructured({
-    model: config.analysisModel,
-    instructions: FUNDER_RESEARCH_PROMPT,
-    content: [{
-      type: "input_text",
-      text: `Research only this public funder context:\n${JSON.stringify({
-        funder: workspace.funder,
-        opportunity: workspace.opportunity,
-        geography: workspace.geography,
-        program_area: workspace.program_area,
-        accessed_date: new Date().toISOString().slice(0, 10),
-      }, null, 2)}`,
-    }],
-    schema: FunderResearchSchema,
-    schemaName: "funder_intelligence",
-    effort: "medium",
-    ownerHash,
-    tools: [{ type: "web_search", search_context_size: "medium" }],
+  const researchPromise = services.getOrResearchFunder(workspace, {
+    research: () => services.parseStructured({
+      model: config.analysisModel,
+      instructions: FUNDER_RESEARCH_PROMPT,
+      content: [{
+        type: "input_text",
+        text: `Research only this public funder context:\n${JSON.stringify({
+          funder: workspace.funder,
+          opportunity: workspace.opportunity,
+          geography: workspace.geography,
+          program_area: workspace.program_area,
+          accessed_date: new Date().toISOString().slice(0, 10),
+        }, null, 2)}`,
+      }],
+      schema: FunderResearchSchema,
+      schemaName: "funder_intelligence_fast",
+      effort: "low",
+      ownerHash,
+      tools: [{ type: "web_search", search_context_size: "low" }],
+      timeoutMs: config.funderTimeoutMs,
+    }),
+  }).catch((error) => {
+    warnings.push(`Funder research used a safeguard result: ${error instanceof Error ? error.message : "timed research failed"}`);
+    return { result: fallbackFunderResearch(workspace, error), cacheStatus: "fallback" };
   });
 
-  await onStage("running_due_diligence");
-  const dueDiligence = await parseStructured({
+  const [assessment, researchEnvelope] = await Promise.all([assessmentPromise, researchPromise]);
+  const layer1Ms = elapsed(layer1StartedAt);
+
+  await onStage("making_decision");
+  const layer2StartedAt = Date.now();
+  const decision = await services.parseStructured({
     model: config.analysisModel,
-    instructions: DUE_DILIGENCE_PROMPT,
-    content: fileContent(documents, `Workspace:\n${JSON.stringify(context, null, 2)}
-
-Extracted facts:\n${JSON.stringify(facts, null, 2)}
-
-Public funder intelligence:\n${JSON.stringify(funderResearch, null, 2)}
-
-Conduct the full due diligence review.`),
-    schema: DueDiligenceSchema,
-    schemaName: "proposal_due_diligence",
-    effort: "medium",
-    ownerHash,
-  });
-
-  await onStage("simulating_reviewers");
-  const reviewerPanel = await parseStructured({
-    model: config.analysisModel,
-    instructions: REVIEWER_PROMPT,
+    instructions: FAST_DECISION_PROMPT,
     content: [{
       type: "input_text",
       text: `Workspace:\n${JSON.stringify(context, null, 2)}
-Facts:\n${JSON.stringify(facts, null, 2)}
-Funder intelligence:\n${JSON.stringify(funderResearch, null, 2)}
-Due diligence:\n${JSON.stringify(dueDiligence, null, 2)}`,
+Proposal assessment:\n${JSON.stringify(assessment, null, 2)}
+Public funder intelligence:\n${JSON.stringify(researchEnvelope.result, null, 2)}
+Complete the skeptical review and final adjudication.`,
     }],
-    schema: ReviewerPanelSchema,
-    schemaName: "skeptical_reviewer_panel",
-    effort: "medium",
+    schema: FastDecisionSchema,
+    schemaName: "grant_fast_decision",
+    effort: "low",
     ownerHash,
+    timeoutMs: config.decisionTimeoutMs,
+  }).catch((error) => {
+    warnings.push(`Decision layer used a safeguard result: ${error instanceof Error ? error.message : "timed decision failed"}`);
+    return fallbackDecision(assessment, researchEnvelope.result, error);
   });
-
-  await onStage("adjudicating");
-  const adjudication = await parseStructured({
-    model: config.analysisModel,
-    instructions: ADJUDICATION_PROMPT,
-    content: [{
-      type: "input_text",
-      text: `Workspace:\n${JSON.stringify(context, null, 2)}
-Facts:\n${JSON.stringify(facts, null, 2)}
-Funder intelligence:\n${JSON.stringify(funderResearch, null, 2)}
-Due diligence:\n${JSON.stringify(dueDiligence, null, 2)}
-Reviewer panel:\n${JSON.stringify(reviewerPanel, null, 2)}`,
-    }],
-    schema: AdjudicationSchema,
-    schemaName: "grant_adjudication",
-    effort: "medium",
-    ownerHash,
-  });
+  const layer2Ms = elapsed(layer2StartedAt);
 
   return {
-    schema_version: "1.0",
+    schema_version: "2.0",
     generated_at: new Date().toISOString(),
     models: { fast: config.fastModel, analysis: config.analysisModel },
-    facts,
-    funder_research: funderResearch,
-    due_diligence: dueDiligence,
-    reviewer_panel: reviewerPanel,
-    adjudication,
+    pipeline: {
+      version: "two_layer_fast_v1",
+      partial: warnings.length > 0,
+      warnings,
+      funder_cache: researchEnvelope.cacheStatus,
+      layer_1_ms: layer1Ms,
+      layer_2_ms: layer2Ms,
+      total_ms: elapsed(totalStartedAt),
+    },
+    facts: assessment.facts,
+    funder_research: researchEnvelope.result,
+    due_diligence: assessment.due_diligence,
+    reviewer_panel: decision.reviewer_panel,
+    adjudication: decision.adjudication,
   };
 }

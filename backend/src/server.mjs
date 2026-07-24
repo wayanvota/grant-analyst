@@ -280,7 +280,15 @@ export function createApp() {
        (id,workspace_id,owner_hash,version,status,stage,model,configuration,source_snapshot)
        VALUES ($1,$2,$3,$4,'running','queued',$5,$6::jsonb,$7::jsonb)`,
       [reviewId, workspace.id, request.ownerHash, version, config.analysisModel,
-        JSON.stringify({ analysisModel: config.analysisModel, fastModel: config.fastModel }),
+        JSON.stringify({
+          pipeline: "two_layer_fast_v1",
+          analysisModel: config.analysisModel,
+          fastModel: config.fastModel,
+          proposalTimeoutMs: config.proposalTimeoutMs,
+          funderTimeoutMs: config.funderTimeoutMs,
+          decisionTimeoutMs: config.decisionTimeoutMs,
+          funderCacheDays: config.funderCacheDays,
+        }),
         JSON.stringify(documents.map(({ id, filename, category, source_type }) => ({ id, filename, category, source_type })))],
     );
     await query("UPDATE workspaces SET status='reviewing', updated_at=NOW() WHERE id=$1", [workspace.id]);
@@ -362,7 +370,7 @@ export function createApp() {
 export function publicMeta() {
   return {
     service: "grant-analyst-api",
-    reviewStages: ["extracting_facts", "researching_funder", "running_due_diligence", "simulating_reviewers", "adjudicating"],
+    reviewStages: ["analyzing_inputs", "making_decision"],
     dailyReviewLimit: config.maxDailyReviews,
     sessionReviewLimit: config.maxSessionDailyReviews,
     maxUploadMb: Math.round(config.maxUploadBytes / 1024 / 1024),

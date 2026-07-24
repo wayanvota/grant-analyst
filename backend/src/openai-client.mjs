@@ -37,6 +37,7 @@ export async function parseStructured({
   effort,
   ownerHash,
   tools,
+  timeoutMs,
 }) {
   const response = await openai().responses.parse({
     model,
@@ -47,6 +48,9 @@ export async function parseStructured({
     safety_identifier: safetyIdentifier(ownerHash),
     tools,
     store: false,
+  }, {
+    timeout: timeoutMs,
+    maxRetries: 0,
   });
   if (!response.output_parsed) throw new Error(`${schemaName} returned no schema-validated output.`);
   return response.output_parsed;

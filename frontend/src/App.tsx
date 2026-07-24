@@ -8,11 +8,8 @@ const emptyForm = {
 };
 
 const reviewStages = [
-  ["extracting_facts", "Extracting facts", "Reading the proposal and identifying confirmed facts, gaps, and conflicts."],
-  ["researching_funder", "Researching the funder", "Checking current public funder priorities, requirements, and comparable grants."],
-  ["running_due_diligence", "Testing the proposal", "Evaluating evidence, feasibility, budget, risks, and the claim ledger."],
-  ["simulating_reviewers", "Challenging the case", "Running a skeptical reviewer panel and building the strongest rejection case."],
-  ["adjudicating", "Adjudicating", "Reconciling the evidence, auditing citations, and ranking revisions."],
+  ["analyzing_inputs", "Analyzing proposal and funder", "Reading the proposal while checking cached or current funder intelligence."],
+  ["making_decision", "Building the decision", "Combining due diligence, skeptical review, citation audit, and revision priorities."],
 ] as const;
 
 function label(value: string) {
@@ -353,7 +350,9 @@ function NewWorkspace({ form, setForm, onSubmit, busy }: {
 function ReviewProgress({ stage, startedAt, now }: { stage: string; startedAt: number; now: number }) {
   const activeIndex = reviewStages.findIndex(([key]) => key === stage);
   const visibleIndex = activeIndex >= 0 ? activeIndex : 0;
-  const progress = stage === "completed" ? 100 : stage === "queued" ? 4 : (visibleIndex + 1) * 20;
+  const progress = stage === "completed" ? 100 : stage === "queued"
+    ? 4
+    : ((visibleIndex + 1) / reviewStages.length) * 100;
   const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
   const elapsed = elapsedSeconds < 60
     ? `${elapsedSeconds}s`
@@ -366,7 +365,7 @@ function ReviewProgress({ stage, startedAt, now }: { stage: string; startedAt: n
         <div><span className="eyebrow">Review in progress</span>
           <h2>{stage === "queued" ? "Preparing the review" : current[1]}</h2></div>
       </div>
-      <div className="review-timing"><strong>{stage === "queued" ? "Queued" : `Stage ${visibleIndex + 1} of 5`}</strong>
+      <div className="review-timing"><strong>{stage === "queued" ? "Queued" : `Layer ${visibleIndex + 1} of ${reviewStages.length}`}</strong>
         <span>{elapsed} elapsed</span></div>
     </div>
     <div className="progress-track" role="progressbar" aria-label="Grant review progress"
@@ -381,7 +380,7 @@ function ReviewProgress({ stage, startedAt, now }: { stage: string; startedAt: n
       </li>;
     })}</ol>
     <p>{stage === "queued" ? "The server accepted your documents and is preparing the first analysis stage." : current[2]}</p>
-    <small>The review continues on the server while this page checks for updates. Full reviews usually take several minutes.</small>
+    <small>The review continues on the server while this page checks for updates. The fast pipeline targets completion in under one minute.</small>
   </section>;
 }
 
@@ -430,9 +429,9 @@ function WorkspaceView({ bundle, paste, setPaste, busy, reviewRunning, upload, u
           onClick={() => removeDocument(document.id)}>Remove</button>
       </article>)}</div>
     </section>}
-    <div className="run-panel"><div><span className="eyebrow">Five-stage analysis</span>
-      <h2>Extract, research, test, challenge, adjudicate.</h2>
-      <p>Your documents are evaluated alongside current public funder sources.</p></div>
+    <div className="run-panel"><div><span className="eyebrow">Two-layer fast analysis</span>
+      <h2>Analyze in parallel, then make the decision.</h2>
+      <p>Your proposal and funder context are reviewed together, with cached public research when available.</p></div>
       <button className="button button-orange" disabled={!!busy || reviewRunning || !bundle.documents.some((doc) => doc.category === "proposal")}
         onClick={runReview}>{reviewRunning ? "Review in progress" : "Run full review"}</button></div>
     {!!bundle.reviews.length && <section className="panel">
@@ -462,6 +461,9 @@ function Results({ bundle, analysis, reviewId, tab, setTab, confirmFact, close }
       <span>Recommendation</span><strong>{label(final.recommendation)}</strong>
     </div></div>
     <div className="guardrail">Assessment, not prediction. Correct material facts and re-run after changing the proposal.</div>
+    {analysis.pipeline?.partial && <div className="guardrail warning">
+      Fast review completed with limitations: {analysis.pipeline.warnings.join(" ")}
+    </div>}
     <div className="result-tabs">{(["decision", "scorecard", "claims", "stress", "sources", "facts"] as const)
       .map((name) => <button key={name} className={tab === name ? "active" : ""} onClick={() => setTab(name)}>{label(name)}</button>)}</div>
     {tab === "decision" && <><div className="metric-grid">

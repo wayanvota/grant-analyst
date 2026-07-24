@@ -9,6 +9,7 @@ export function markdownReport(workspace, analysis) {
 
 **Opportunity:** ${workspace.opportunity}  
 **Generated:** ${analysis.generated_at}  
+**Pipeline runtime:** ${analysis.pipeline?.total_ms ? `${(analysis.pipeline.total_ms / 1000).toFixed(1)} seconds` : "Not recorded"}<br>
 **Recommendation:** ${final.recommendation.replaceAll("_", " ").toUpperCase()}  
 **Proposal merit:** ${final.proposal_merit.replaceAll("_", " ")}  
 **Eligibility:** ${final.eligibility.replaceAll("_", " ")}  
@@ -18,6 +19,7 @@ export function markdownReport(workspace, analysis) {
 **Diagnostic score:** ${final.diagnostic_score}/100
 
 > This is an evidence-based merit and fit assessment, not a prediction of funding.
+${analysis.pipeline?.partial ? `\n> Fast review limitation: ${analysis.pipeline.warnings.join(" ")}\n` : ""}
 
 ## Decision
 

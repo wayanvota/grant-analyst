@@ -24,12 +24,9 @@ only component allowed to access Neon and OpenAI.
 
 1. Creates a browser-private workspace for one proposal and opportunity.
 2. Accepts pasted text or PDF, Office, text, and spreadsheet files.
-3. Runs five review stages:
-   - fact extraction and eligibility checks
-   - current public funder research
-   - proposal and claim due diligence
-   - skeptical reviewer simulation
-   - final adjudication and citation audit
+3. Runs a two-layer fast review:
+   - proposal extraction and due diligence run in parallel with cached or current funder research
+   - skeptical review, adjudication, citation audit, and revision ranking run in one decision pass
 4. Shows the decision, diagnostic scorecard, claim ledger, strongest rejection
    case, public sources, and revision priorities.
 5. Records corrected facts, preserves review versions, and exports Markdown or
@@ -93,8 +90,8 @@ npm run test:live
 ```
 
 The paid suite is opt-in and never runs in normal CI. It starts exactly three
-full five-stage OpenAI reviews with synthetic proposals, validates their
-structured results and model IDs, and deletes the test workspaces and OpenAI
+two-layer OpenAI reviews with synthetic proposals, validates that each complete
+result finishes within 60 seconds, and deletes the test workspaces and OpenAI
 files afterward:
 
 ```bash
@@ -117,6 +114,8 @@ The backend includes:
 - document count and size limits
 - server-only OpenAI and Neon credentials
 - prompt-injection defenses for uploaded documents
+- 14-day shared funder-research caching
+- explicit OpenAI time budgets and marked safeguard results
 - ownership checks on every workspace, document, review, correction, and export
 
 The browser session is lightweight pseudonymous access, not full

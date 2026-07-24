@@ -89,6 +89,11 @@ export const DueDiligenceSchema = z.object({
   specialist_reviews_required: z.array(z.string()),
 });
 
+export const ProposalAssessmentSchema = z.object({
+  facts: FactExtractionSchema,
+  due_diligence: DueDiligenceSchema,
+});
+
 export const ReviewerPanelSchema = z.object({
   reviewers: z.array(z.object({
     persona: z.string(),
@@ -131,4 +136,9 @@ export const AdjudicationSchema = z.object({
     conflicts: z.array(z.string()), notes: z.array(z.string()),
   }),
   limitations: z.array(z.string()),
+});
+
+export const FastDecisionSchema = z.object({
+  reviewer_panel: ReviewerPanelSchema,
+  adjudication: AdjudicationSchema,
 });

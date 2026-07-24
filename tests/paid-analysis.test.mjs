@@ -12,7 +12,7 @@ import {
 const enabled = process.env.RUN_PAID_OPENAI_TESTS === "1";
 const runCount = Number.parseInt(process.env.PAID_TEST_RUNS || "3", 10);
 const pollIntervalMs = 5_000;
-const maxWaitMs = 15 * 60 * 1_000;
+const maxWaitMs = 3 * 60 * 1_000;
 
 const proposal = `SYNTHETIC TEST PROPOSAL
 
@@ -32,7 +32,7 @@ async function startPaidRun(index) {
   const session = newSession();
   const workspace = await createWorkspace(session, {
     organization: `Grant Analyst paid test ${index}`,
-    opportunity: `Paid production analysis ${index}`,
+    opportunity: "Paid production analysis",
   });
   try {
     await uploadTextDocument(session, workspace.id, {
@@ -70,7 +70,7 @@ async function waitForReview(run) {
   throw new Error(`Paid analysis ${run.index} did not finish within ${maxWaitMs / 60_000} minutes.`);
 }
 
-test("three paid production analyses complete with validated structured results", {
+test("three paid two-layer production analyses complete fully in under one minute", {
   skip: !enabled,
   timeout: maxWaitMs + 300_000,
 }, async () => {
@@ -85,7 +85,11 @@ test("three paid production analyses complete with validated structured results"
       assert.equal(review.status, "completed");
       assert.equal(review.stage, "completed");
       assert.equal(review.model, "gpt-5.6-terra");
-      assert.equal(review.result.schema_version, "1.0");
+      assert.equal(review.result.schema_version, "2.0");
+      assert.equal(review.result.pipeline.version, "two_layer_fast_v1");
+      assert.equal(review.result.pipeline.partial, false);
+      assert.ok(review.result.pipeline.total_ms <= 60_000,
+        `Run ${review.id} took ${review.result.pipeline.total_ms}ms`);
       assert.equal(review.result.models.analysis, "gpt-5.6-terra");
       assert.equal(review.result.models.fast, "gpt-5.6-luna");
       assert.ok(review.result.adjudication.recommendation);

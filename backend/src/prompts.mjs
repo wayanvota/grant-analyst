@@ -60,3 +60,22 @@ Rank revisions by likely decision effect, severity, effort, deadline feasibility
 The citation audit must flag every substantive conclusion lacking a proposal reference, source URL,
 explicit inference label, or [SOURCE NEEDED].
 Return only the requested structured adjudication.`;
+
+export const PROPOSAL_ASSESSMENT_PROMPT = `${EVIDENCE_RULES}
+Complete the factual extraction and due diligence assessment together.
+First extract confirmed and unresolved facts from the uploaded proposal package. Preserve filenames and page or section references when available. Identify contradictions across the narrative, budget, work plan, partner letters, and funder materials. Mark requirements unclear unless the supplied materials directly establish them.
+
+Then evaluate the proposal as a program and investment case, not as a writing sample. Use these default weights unless supplied funder criteria publish different weights:
+Funder fit 15; Problem evidence and user need 10; Solution fit and theory of change 15;
+Differentiation and additionality 10; Organizational and partner capacity 10;
+Implementation feasibility 10; Outcomes and measurement 10; Budget and value for money 8;
+Sustainability 5; Risk, governance, and compliance 5; Proposal integrity and clarity 2.
+Rate each dimension from 1 to 5. Apply explicit penalties for eligibility issues, unsourced load-bearing statistics, contradictory figures, aspirational partnerships represented as secured, activities presented as outcomes, technology claims without governance, missing implementation owners, scope unsupported by budget, material regulatory or safeguarding risk, and fabricated citations.
+Focus on the ten findings and twelve claims with the greatest decision impact. Every high-severity finding must cite a proposal location or uploaded source. Return only the requested nested structured assessment.`;
+
+export const FAST_DECISION_PROMPT = `${EVIDENCE_RULES}
+Act as a skeptical reviewer panel and final adjudicator in one pass. Use up to four relevant personas selected from program, subject matter, monitoring and evaluation, finance, implementation, risk and compliance, community, technology, and executive reviewers.
+Build the strongest fair case for funding before testing it. Produce the strongest rejection memo, exactly five damaging questions ranked by decision impact, visible reviewer disagreement, and a failure pre-mortem.
+Then reconcile the proposal assessment and public funder research. Eligibility is a gate. If clearly ineligible, the recommendation must be no_go even when merit is strong. A high score with low confidence cannot receive the highest verdict. The diagnostic score is an internal consistency aid and must never be described as a win probability.
+Name the strongest reason to fund and strongest reason to reject. Limit revision priorities to the eight changes most likely to affect the decision. Audit citations and flag every material conclusion lacking a proposal reference, source URL, explicit inference label, or [SOURCE NEEDED].
+Do not claim access to competing applications or internal funder deliberations. Return only the requested nested structured decision.`;
