@@ -7,6 +7,14 @@ const emptyForm = {
   geography: "", programArea: "", organizationType: "", proposalVersion: "1",
 };
 
+const reviewStages = [
+  ["extracting_facts", "Extracting facts", "Reading the proposal and identifying confirmed facts, gaps, and conflicts."],
+  ["researching_funder", "Researching the funder", "Checking current public funder priorities, requirements, and comparable grants."],
+  ["running_due_diligence", "Testing the proposal", "Evaluating evidence, feasibility, budget, risks, and the claim ledger."],
+  ["simulating_reviewers", "Challenging the case", "Running a skeptical reviewer panel and building the strongest rejection case."],
+  ["adjudicating", "Adjudicating", "Reconciling the evidence, auditing citations, and ranking revisions."],
+] as const;
+
 function label(value: string) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -20,6 +28,10 @@ export default function App() {
   const [paste, setPaste] = useState({ proposal: "", funder_material: "", evidence: "" });
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [reviewProgress, setReviewProgress] = useState<{
+    id: string; stage: string; startedAt: number;
+  } | null>(null);
+  const [clock, setClock] = useState(Date.now());
   const [tab, setTab] = useState<"decision" | "scorecard" | "claims" | "stress" | "sources" | "facts">("decision");
   const [meta, setMeta] = useState<{ sessionReviewLimit?: number; maxUploadMb?: number }>({});
 
@@ -62,6 +74,72 @@ export default function App() {
     ));
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!reviewProgress) return;
+    setClock(Date.now());
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [reviewProgress?.id]);
+
+  useEffect(() => {
+    if (!bundle || analysis || reviewProgress) return;
+    const running = bundle.reviews.find((review) => review.status === "running");
+    if (running) {
+      setReviewId(running.id);
+      setReviewProgress({
+        id: running.id,
+        stage: running.stage,
+        startedAt: new Date(running.created_at).getTime(),
+      });
+    }
+  }, [bundle, analysis, reviewProgress]);
+
+  useEffect(() => {
+    if (!reviewProgress || !bundle) return;
+    let active = true;
+    const workspaceId = bundle.workspace.id;
+    const progressId = reviewProgress.id;
+
+    async function pollReview() {
+      try {
+        for (let attempt = 0; active && attempt < 720; attempt += 1) {
+          const current = await api<{ review: {
+            status: string; stage: string; error_message?: string; result: Analysis | null;
+          } }>(`/api/reviews/${progressId}`);
+          if (!active) return;
+          setReviewProgress((progress) => progress?.id === progressId
+            ? { ...progress, stage: current.review.stage }
+            : progress);
+          if (current.review.status === "failed") {
+            throw new Error(current.review.error_message || "Review failed.");
+          }
+          if (current.review.status === "completed" && current.review.result) {
+            const latestBundle = await api<Bundle>(`/api/workspaces/${workspaceId}`);
+            if (!active) return;
+            setBundle(latestBundle);
+            setAnalysis(current.review.result);
+            setReviewId(progressId);
+            setReviewProgress(null);
+            setTab("decision");
+            await refreshList();
+            return;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 2500));
+        }
+        if (active) throw new Error("The review is taking longer than expected. Reopen this workspace to check its status.");
+      } catch (cause) {
+        if (!active) return;
+        setReviewProgress(null);
+        setError(cause instanceof Error ? cause.message : "Review failed.");
+        const latestBundle = await api<Bundle>(`/api/workspaces/${workspaceId}`).catch(() => null);
+        if (latestBundle && active) setBundle(latestBundle);
+      }
+    }
+
+    pollReview();
+    return () => { active = false; };
+  }, [reviewProgress?.id]);
 
   async function createWorkspace(event: FormEvent) {
     event.preventDefault();
@@ -118,24 +196,9 @@ export default function App() {
         method: "POST",
       });
       setReviewId(data.review.id);
-      let completed: Analysis | null = null;
-      for (let attempt = 0; attempt < 240; attempt += 1) {
-        const current = await api<{ review: {
-          status: string; stage: string; error_message?: string; result: Analysis | null;
-        } }>(`/api/reviews/${data.review.id}`);
-        setBusy(`Review stage: ${label(current.review.stage)}`);
-        if (current.review.status === "failed") throw new Error(current.review.error_message || "Review failed.");
-        if (current.review.status === "completed" && current.review.result) {
-          completed = current.review.result;
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 2500));
-      }
-      if (!completed) throw new Error("The review is still running. Open it from version history shortly.");
-      await openWorkspace(bundle.workspace.id);
-      setAnalysis(completed);
-      setReviewId(data.review.id);
-      setTab("decision");
+      setReviewProgress({ id: data.review.id, stage: "queued", startedAt: Date.now() });
+      const latestBundle = await api<Bundle>(`/api/workspaces/${bundle.workspace.id}`);
+      setBundle(latestBundle);
       await refreshList();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Review failed.");
@@ -193,12 +256,14 @@ export default function App() {
 
   return <main className="app-shell">
     <header className="topbar">
-      <button className="brand" onClick={() => { setBundle(null); setAnalysis(null); }}>
+      <button className="brand" disabled={!!reviewProgress}
+        onClick={() => { setBundle(null); setAnalysis(null); }}>
         <span className="brand-mark">GA</span> Grant Analyst
       </button>
       <div className="topbar-actions">
         <span className="saved-state"><i /> Pseudonymous browser session</span>
-        {bundle && <button className="button button-outline" onClick={() => setBundle(null)}>New review</button>}
+        {bundle && <button className="button button-outline" disabled={!!reviewProgress}
+          onClick={() => setBundle(null)}>New review</button>}
       </div>
     </header>
 
@@ -207,6 +272,7 @@ export default function App() {
         <span className="sidebar-label">Your workspaces</span>
         <nav>{workspaces.map((workspace) =>
           <button className={`nav-item ${bundle?.workspace.id === workspace.id ? "active" : ""}`}
+            disabled={!!reviewProgress && bundle?.workspace.id !== workspace.id}
             key={workspace.id} onClick={() => openWorkspace(workspace.id)}>
             <span>{workspace.review_count ?? 0}</span>
             <div>{workspace.organization}<small>{workspace.funder}</small></div>
@@ -221,6 +287,8 @@ export default function App() {
       <section className="content">
         {error && <div className="notice" role="alert"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
         {busy && <div className="guardrail" role="status">{busy}</div>}
+        {reviewProgress && <ReviewProgress stage={reviewProgress.stage}
+          startedAt={reviewProgress.startedAt} now={clock} />}
 
         {!bundle ? <NewWorkspace form={form} setForm={setForm} onSubmit={createWorkspace} busy={busy} />
           : analysis ? <Results
@@ -229,6 +297,7 @@ export default function App() {
           />
             : <WorkspaceView
               bundle={bundle} paste={paste} setPaste={setPaste} busy={busy}
+              reviewRunning={!!reviewProgress}
               upload={upload} uploadPaste={uploadPaste} runReview={runReview}
               removeDocument={removeDocument} openReview={openReview}
               deleteWorkspace={async () => {
@@ -281,10 +350,45 @@ function NewWorkspace({ form, setForm, onSubmit, busy }: {
   </>;
 }
 
-function WorkspaceView({ bundle, paste, setPaste, busy, upload, uploadPaste, runReview, removeDocument, openReview, deleteWorkspace }: {
+function ReviewProgress({ stage, startedAt, now }: { stage: string; startedAt: number; now: number }) {
+  const activeIndex = reviewStages.findIndex(([key]) => key === stage);
+  const visibleIndex = activeIndex >= 0 ? activeIndex : 0;
+  const progress = stage === "completed" ? 100 : stage === "queued" ? 4 : (visibleIndex + 1) * 20;
+  const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const elapsed = elapsedSeconds < 60
+    ? `${elapsedSeconds}s`
+    : `${Math.floor(elapsedSeconds / 60)}m ${String(elapsedSeconds % 60).padStart(2, "0")}s`;
+  const current = reviewStages[visibleIndex];
+
+  return <section className="review-progress" role="status" aria-live="polite">
+    <div className="review-progress-head">
+      <div><span className="working-dot" aria-hidden="true" />
+        <div><span className="eyebrow">Review in progress</span>
+          <h2>{stage === "queued" ? "Preparing the review" : current[1]}</h2></div>
+      </div>
+      <div className="review-timing"><strong>{stage === "queued" ? "Queued" : `Stage ${visibleIndex + 1} of 5`}</strong>
+        <span>{elapsed} elapsed</span></div>
+    </div>
+    <div className="progress-track" role="progressbar" aria-label="Grant review progress"
+      aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+      <span style={{ width: `${progress}%` }} />
+    </div>
+    <ol className="progress-stages">{reviewStages.map(([key, title], index) => {
+      const complete = activeIndex > index || stage === "completed";
+      const active = key === stage;
+      return <li key={key} className={complete ? "complete" : active ? "active" : "pending"}>
+        <span>{complete ? "✓" : String(index + 1).padStart(2, "0")}</span><strong>{title}</strong>
+      </li>;
+    })}</ol>
+    <p>{stage === "queued" ? "The server accepted your documents and is preparing the first analysis stage." : current[2]}</p>
+    <small>The review continues on the server while this page checks for updates. Full reviews usually take several minutes.</small>
+  </section>;
+}
+
+function WorkspaceView({ bundle, paste, setPaste, busy, reviewRunning, upload, uploadPaste, runReview, removeDocument, openReview, deleteWorkspace }: {
   bundle: Bundle; paste: { proposal: string; funder_material: string; evidence: string };
   setPaste: (value: { proposal: string; funder_material: string; evidence: string }) => void;
-  busy: string; upload: (file: File, category: string) => Promise<void>;
+  busy: string; reviewRunning: boolean; upload: (file: File, category: string) => Promise<void>;
   uploadPaste: (category: keyof typeof paste) => Promise<void>; runReview: () => Promise<void>;
   removeDocument: (id: string) => Promise<void>; openReview: (id: string) => Promise<void>;
   deleteWorkspace: () => Promise<void>;
@@ -297,7 +401,8 @@ function WorkspaceView({ bundle, paste, setPaste, busy, upload, uploadPaste, run
   return <>
     <div className="page-heading compact"><div><span className="eyebrow">Review workspace</span>
       <h1>{bundle.workspace.organization}</h1><p>{bundle.workspace.opportunity} · {bundle.workspace.funder}</p>
-    </div><button className="button button-ghost danger-button" onClick={deleteWorkspace}>Delete workspace</button></div>
+    </div><button className="button button-ghost danger-button" disabled={reviewRunning}
+      onClick={deleteWorkspace}>Delete workspace</button></div>
     <section className="panel">
       <div className="panel-heading"><div><span className="step">01</span><h2>Source materials</h2></div>
         <p>{bundle.documents.length} document{bundle.documents.length === 1 ? "" : "s"}</p></div>
@@ -307,9 +412,10 @@ function WorkspaceView({ bundle, paste, setPaste, busy, upload, uploadPaste, run
         <textarea value={paste[category]} onChange={(event) => setPaste({ ...paste, [category]: event.target.value })}
           placeholder={placeholder} />
         <div className="document-footer">
-          <button className="text-button" disabled={!paste[category].trim() || !!busy}
+          <button className="text-button" disabled={!paste[category].trim() || !!busy || reviewRunning}
             onClick={() => uploadPaste(category)}>Save pasted text</button>
-          <label className="file-button">Upload file<input type="file"
+          <label className={`file-button ${reviewRunning ? "disabled" : ""}`}>Upload file<input type="file"
+            disabled={reviewRunning}
             accept=".pdf,.txt,.md,.json,.html,.xml,.doc,.docx,.rtf,.odt,.ppt,.pptx,.csv,.xls,.xlsx"
             onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], category)} /></label>
         </div>
@@ -320,14 +426,15 @@ function WorkspaceView({ bundle, paste, setPaste, busy, upload, uploadPaste, run
       <div className="source-list">{bundle.documents.map((document) => <article key={document.id}>
         <span>{label(document.category)}</span><div><strong>{document.filename}</strong>
           <p>{Math.ceil(document.size_bytes / 1024)} KB · {label(document.source_type)}</p></div>
-        <button className="text-button danger" onClick={() => removeDocument(document.id)}>Remove</button>
+        <button className="text-button danger" disabled={reviewRunning}
+          onClick={() => removeDocument(document.id)}>Remove</button>
       </article>)}</div>
     </section>}
     <div className="run-panel"><div><span className="eyebrow">Five-stage analysis</span>
       <h2>Extract, research, test, challenge, adjudicate.</h2>
       <p>Your documents are evaluated alongside current public funder sources.</p></div>
-      <button className="button button-orange" disabled={!!busy || !bundle.documents.some((doc) => doc.category === "proposal")}
-        onClick={runReview}>Run full review</button></div>
+      <button className="button button-orange" disabled={!!busy || reviewRunning || !bundle.documents.some((doc) => doc.category === "proposal")}
+        onClick={runReview}>{reviewRunning ? "Review in progress" : "Run full review"}</button></div>
     {!!bundle.reviews.length && <section className="panel">
       <div className="panel-heading"><h2>Version history</h2></div>
       <div className="source-list">{bundle.reviews.map((review) => <article key={review.id}>

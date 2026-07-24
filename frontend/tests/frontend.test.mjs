@@ -11,6 +11,9 @@ test("static frontend keeps secrets behind the Render API", async () => {
   assert.match(api, /x-grant-session/);
   assert.match(api, /GRANT_ANALYST_CONFIG/);
   assert.match(app, /Five damaging questions/);
+  assert.match(app, /Grant review progress/);
+  assert.match(app, /Stage \$\{visibleIndex \+ 1\} of 5/);
+  assert.match(app, /Full reviews usually take several minutes/);
   assert.match(config, /onrender\.com/);
   assert.doesNotMatch(`${api}${app}${config}`, /OPENAI_API_KEY|DATABASE_URL/);
 });
