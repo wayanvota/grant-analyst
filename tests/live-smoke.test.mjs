@@ -30,6 +30,12 @@ test("public frontend and its required static assets are reachable", async () =>
     assert.equal(assetResponse.status, 200, `${assetResponse.url} should be reachable`);
   }
 
+  const javascriptPath = assetPaths.find((path) => path.endsWith(".js") && path.includes("/assets/"));
+  assert.ok(javascriptPath, "Expected a bundled JavaScript application asset.");
+  const javascript = await (await fetch(new URL(javascriptPath, frontendBase))).text();
+  assert.match(javascript, /I’m Wayan Vota/);
+  assert.match(javascript, /https:\/\/wayan\.com\/portfolio\//);
+
   const config = await (await fetch(new URL("./config.js", frontendBase))).text();
   assert.match(config, /https:\/\/grant-analyst-api\.onrender\.com/);
   assert.doesNotMatch(config, /OPENAI_API_KEY|DATABASE_URL/);

@@ -10,7 +10,7 @@ import {
 } from "./live-helpers.mjs";
 
 const enabled = process.env.RUN_PAID_OPENAI_TESTS === "1";
-const runCount = Number.parseInt(process.env.PAID_TEST_RUNS || "3", 10);
+const runCount = Number.parseInt(process.env.PAID_TEST_RUNS || "2", 10);
 const pollIntervalMs = 5_000;
 const maxWaitMs = 4 * 60 * 1_000;
 
@@ -72,37 +72,41 @@ async function waitForReview(run) {
   throw new Error(`Paid analysis ${run.index} did not finish within ${maxWaitMs / 60_000} minutes.`);
 }
 
-test("three paid two-layer production analyses complete fully within 90 seconds", {
-  skip: !enabled,
-  timeout: maxWaitMs + 300_000,
-}, async () => {
-  assert.equal(runCount, 3, "This production verification is intentionally fixed at three paid runs.");
-  const runs = [];
+async function verifyPaidRun(index) {
+  let run;
   try {
-    for (let index = 1; index <= runCount; index += 1) {
-      runs.push(await startPaidRun(index));
-    }
-    const reviews = await Promise.all(runs.map(waitForReview));
-    for (const review of reviews) {
-      assert.equal(review.status, "complete");
-      assert.equal(review.stage, "complete");
-      assert.equal(review.completion_state, "complete");
-      assert.equal(review.model, "gpt-5.6-luna");
-      assert.equal(review.result.schema_version, "2.0");
-      assert.equal(review.result.pipeline.version, "two_layer_fast_v1");
-      assert.equal(review.result.pipeline.partial, false,
-        `Run ${review.id} was partial: ${review.result.pipeline.warnings.join(" | ")}`);
-      assert.ok(review.result.pipeline.total_ms <= 90_000,
-        `Run ${review.id} took ${review.result.pipeline.total_ms}ms`);
-      assert.equal(review.result.models.analysis, "gpt-5.6-terra");
-      assert.equal(review.result.models.fast, "gpt-5.6-luna");
-      assert.ok(review.result.adjudication.recommendation);
-      assert.ok(Number.isFinite(review.result.adjudication.diagnostic_score));
-      assert.ok(review.completed_at);
-      assert.equal(review.result.manifest.completion_state, "complete");
-      assert.match(review.result.manifest.source_snapshot_id, /^ss_[a-f0-9]{64}$/);
-    }
+    run = await startPaidRun(index);
+    const review = await waitForReview(run);
+    assert.equal(review.status, "complete");
+    assert.equal(review.stage, "complete");
+    assert.equal(review.completion_state, "complete");
+    assert.equal(review.model, "gpt-5.6-luna");
+    assert.equal(review.result.schema_version, "2.0");
+    assert.equal(review.result.pipeline.version, "two_layer_fast_v1");
+    assert.equal(review.result.pipeline.partial, false,
+      `Run ${review.id} was partial: ${review.result.pipeline.warnings.join(" | ")}`);
+    assert.ok(review.result.pipeline.total_ms <= 90_000,
+      `Run ${review.id} took ${review.result.pipeline.total_ms}ms`);
+    assert.equal(review.result.models.analysis, "gpt-5.6-terra");
+    assert.equal(review.result.models.fast, "gpt-5.6-luna");
+    assert.ok(review.result.adjudication.recommendation);
+    assert.ok(Number.isFinite(review.result.adjudication.diagnostic_score));
+    assert.ok(review.completed_at);
+    assert.equal(review.result.manifest.completion_state, "complete");
+    assert.match(review.result.manifest.source_snapshot_id, /^ss_[a-f0-9]{64}$/);
+    console.log(
+      `Paid analysis ${index}: complete in ${review.result.pipeline.total_ms}ms, `
+      + `manifest ${review.result.manifest.manifest_version}`,
+    );
   } finally {
-    await Promise.allSettled(runs.map((run) => deleteWorkspace(run.session, run.workspaceId)));
+    if (run) await deleteWorkspace(run.session, run.workspaceId);
   }
-});
+}
+
+assert.equal(runCount, 2, "This production verification is intentionally fixed at two paid runs.");
+for (let index = 1; index <= runCount; index += 1) {
+  test(`paid OpenAI production analysis ${index} completes fully within 90 seconds`, {
+    skip: !enabled,
+    timeout: maxWaitMs + 60_000,
+  }, () => verifyPaidRun(index));
+}

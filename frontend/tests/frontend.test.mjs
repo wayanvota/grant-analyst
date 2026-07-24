@@ -14,6 +14,9 @@ test("static frontend keeps secrets behind the Render API", async () => {
   assert.match(app, /Grant review progress/);
   assert.match(app, /Layer \$\{visibleIndex \+ 1\} of \$\{reviewStages\.length\}/);
   assert.match(app, /full review may take up to 90 seconds/);
+  assert.match(app, /I’m Wayan Vota, and I created Grant Analyst/);
+  assert.match(app, /https:\/\/wayan\.com\/portfolio\//);
+  assert.match(app, /supports human\s+judgment rather than replacing it/);
   assert.match(config, /onrender\.com/);
   assert.doesNotMatch(`${api}${app}${config}`, /OPENAI_API_KEY|DATABASE_URL/);
 });

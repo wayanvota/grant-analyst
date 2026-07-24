@@ -345,6 +345,27 @@ function NewWorkspace({ form, setForm, onSubmit, busy }: {
       </label>)}</div>
       <div className="action-row"><button disabled={!!busy} className="button button-orange">Create workspace</button></div>
     </form>
+    <section className="about-section" aria-labelledby="about-grant-analyst">
+      <div>
+        <span className="eyebrow">About this tool</span>
+        <h2 id="about-grant-analyst">Built to make grant proposals harder to reject.</h2>
+      </div>
+      <div className="about-copy">
+        <p>
+          I’m Wayan Vota, and I created Grant Analyst because proposal teams need a fast,
+          evidence-first way to expose weak claims, eligibility risks, and likely rejection
+          arguments before a funder sees them.
+        </p>
+        <p>
+          The tool turns that scrutiny into practical revision priorities. It supports human
+          judgment rather than replacing it, and its assessment is not a prediction of a
+          funder’s decision.
+        </p>
+        <a className="button button-outline" href="https://wayan.com/portfolio/">
+          See my other work
+        </a>
+      </div>
+    </section>
   </>;
 }
 
