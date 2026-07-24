@@ -43,7 +43,7 @@ export async function runAnalysisPipeline(
   await onStage("analyzing_inputs");
   const layer1StartedAt = Date.now();
   const assessmentPromise = services.parseStructured({
-    model: config.analysisModel,
+    model: config.fastModel,
     instructions: PROPOSAL_ASSESSMENT_PROMPT,
     content: fileContent(
       documents,
@@ -54,6 +54,7 @@ export async function runAnalysisPipeline(
     effort: "low",
     ownerHash,
     timeoutMs: config.proposalTimeoutMs,
+    maxOutputTokens: 5_000,
   }).catch((error) => {
     warnings.push(`Proposal assessment used a safeguard result: ${error instanceof Error ? error.message : "timed analysis failed"}`);
     return fallbackProposalAssessment(workspace, documents, error);
@@ -79,6 +80,7 @@ export async function runAnalysisPipeline(
       ownerHash,
       tools: [{ type: "web_search", search_context_size: "low" }],
       timeoutMs: config.funderTimeoutMs,
+      maxOutputTokens: 4_000,
     }),
   }).catch((error) => {
     warnings.push(`Funder research used a safeguard result: ${error instanceof Error ? error.message : "timed research failed"}`);
@@ -91,7 +93,7 @@ export async function runAnalysisPipeline(
   await onStage("making_decision");
   const layer2StartedAt = Date.now();
   const decision = await services.parseStructured({
-    model: config.analysisModel,
+    model: config.fastModel,
     instructions: FAST_DECISION_PROMPT,
     content: [{
       type: "input_text",
@@ -105,6 +107,7 @@ Complete the skeptical review and final adjudication.`,
     effort: "low",
     ownerHash,
     timeoutMs: config.decisionTimeoutMs,
+    maxOutputTokens: 5_000,
   }).catch((error) => {
     warnings.push(`Decision layer used a safeguard result: ${error instanceof Error ? error.message : "timed decision failed"}`);
     return fallbackDecision(assessment, researchEnvelope.result, error);

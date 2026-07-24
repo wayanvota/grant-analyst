@@ -84,10 +84,11 @@ test("three paid two-layer production analyses complete fully in under one minut
     for (const review of reviews) {
       assert.equal(review.status, "completed");
       assert.equal(review.stage, "completed");
-      assert.equal(review.model, "gpt-5.6-terra");
+      assert.equal(review.model, "gpt-5.6-luna");
       assert.equal(review.result.schema_version, "2.0");
       assert.equal(review.result.pipeline.version, "two_layer_fast_v1");
-      assert.equal(review.result.pipeline.partial, false);
+      assert.equal(review.result.pipeline.partial, false,
+        `Run ${review.id} was partial: ${review.result.pipeline.warnings.join(" | ")}`);
       assert.ok(review.result.pipeline.total_ms <= 60_000,
         `Run ${review.id} took ${review.result.pipeline.total_ms}ms`);
       assert.equal(review.result.models.analysis, "gpt-5.6-terra");

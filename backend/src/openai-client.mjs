@@ -38,6 +38,7 @@ export async function parseStructured({
   ownerHash,
   tools,
   timeoutMs,
+  maxOutputTokens,
 }) {
   const response = await openai().responses.parse({
     model,
@@ -48,6 +49,7 @@ export async function parseStructured({
     safety_identifier: safetyIdentifier(ownerHash),
     tools,
     store: false,
+    max_output_tokens: maxOutputTokens,
   }, {
     timeout: timeoutMs,
     maxRetries: 0,

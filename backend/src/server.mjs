@@ -279,7 +279,7 @@ export function createApp() {
       `INSERT INTO reviews
        (id,workspace_id,owner_hash,version,status,stage,model,configuration,source_snapshot)
        VALUES ($1,$2,$3,$4,'running','queued',$5,$6::jsonb,$7::jsonb)`,
-      [reviewId, workspace.id, request.ownerHash, version, config.analysisModel,
+      [reviewId, workspace.id, request.ownerHash, version, config.fastModel,
         JSON.stringify({
           pipeline: "two_layer_fast_v1",
           analysisModel: config.analysisModel,
