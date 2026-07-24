@@ -11,6 +11,7 @@ const reviewStages = [
   ["analyzing_inputs", "Analyzing proposal and funder", "Reading the proposal while checking cached or current funder intelligence."],
   ["making_decision", "Building the decision", "Combining due diligence, skeptical review, citation audit, and revision priorities."],
 ] as const;
+const completedReviewStates = new Set(["completed", "complete", "complete_with_warnings", "partial"]);
 
 function label(value: string) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -111,7 +112,7 @@ export default function App() {
           if (current.review.status === "failed") {
             throw new Error(current.review.error_message || "Review failed.");
           }
-          if (current.review.status === "completed" && current.review.result) {
+          if (completedReviewStates.has(current.review.status) && current.review.result) {
             const latestBundle = await api<Bundle>(`/api/workspaces/${workspaceId}`);
             if (!active) return;
             setBundle(latestBundle);
@@ -449,12 +450,19 @@ function WorkspaceView({ bundle, paste, setPaste, busy, reviewRunning, upload, u
         onClick={runReview}>{reviewRunning ? "Review in progress" : "Run full review"}</button></div>
     {!!bundle.reviews.length && <section className="panel">
       <div className="panel-heading"><h2>Version history</h2></div>
-      <div className="source-list">{bundle.reviews.map((review) => <article key={review.id}>
-        <span>V{review.version}</span><div><strong>{review.status === "completed"
-          ? `${label(review.recommendation || "")} · ${review.score}/100` : label(review.stage)}</strong>
-          <p>{new Date(review.created_at).toLocaleString()}</p></div>
-        {review.status === "completed" && <button className="text-button" onClick={() => openReview(review.id)}>Open</button>}
-      </article>)}</div>
+      <div className="source-list">{bundle.reviews.map((review) => {
+        const openable = completedReviewStates.has(review.status);
+        const stateLabel = review.completion_state && review.completion_state !== "complete"
+          ? `${label(review.completion_state)} · `
+          : "";
+        return <article key={review.id}>
+          <span>V{review.version}</span><div><strong>{openable
+            ? `${stateLabel}${label(review.recommendation || "")} · ${review.score}/100`
+            : label(review.stage)}</strong>
+            <p>{new Date(review.created_at).toLocaleString()}</p></div>
+          {openable && <button className="text-button" onClick={() => openReview(review.id)}>Open</button>}
+        </article>;
+      })}</div>
     </section>}
   </>;
 }

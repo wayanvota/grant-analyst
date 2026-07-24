@@ -1,4 +1,6 @@
 import { config } from "./config.mjs";
+import { classifyAnalysisError } from "./analysis-errors.mjs";
+import { createAnalysisManifest } from "./analysis-manifest.mjs";
 import { fallbackDecision, fallbackFunderResearch, fallbackProposalAssessment } from "./fast-fallbacks.mjs";
 import { getOrResearchFunder } from "./funder-cache.mjs";
 import { parseStructured } from "./openai-client.mjs";
@@ -23,11 +25,31 @@ function elapsed(startedAt) {
 }
 
 export async function runAnalysisPipeline(
-  { workspace, documents, ownerHash, onStage },
+  { workspace, documents, ownerHash, reviewId = null, correlationId = null, onStage },
   services = { parseStructured, getOrResearchFunder },
 ) {
   const totalStartedAt = Date.now();
+  const analysisStartedAt = new Date(totalStartedAt).toISOString();
   const warnings = [];
+  const errors = [];
+  const moduleRuns = [];
+  const providerRequests = [];
+  const recordProviderResponse = (record) => providerRequests.push(record);
+  const recordModuleError = (error, moduleId, startedAt, details = {}) => {
+    const classified = classifyAnalysisError(error, moduleId);
+    errors.push(classified.toRecord());
+    moduleRuns.push({
+      module_id: moduleId,
+      status: "partial",
+      started_at: new Date(startedAt).toISOString(),
+      completed_at: new Date().toISOString(),
+      duration_ms: elapsed(startedAt),
+      error_code: classified.code,
+      ...details,
+    });
+    warnings.push(`${classified.code}: ${classified.message}`);
+    return classified;
+  };
   const context = {
     organization: workspace.organization,
     funder: workspace.funder,
@@ -42,6 +64,7 @@ export async function runAnalysisPipeline(
 
   await onStage("analyzing_inputs");
   const layer1StartedAt = Date.now();
+  const assessmentStartedAt = Date.now();
   const assessmentPromise = services.parseStructured({
     model: config.fastModel,
     instructions: PROPOSAL_ASSESSMENT_PROMPT,
@@ -55,11 +78,24 @@ export async function runAnalysisPipeline(
     ownerHash,
     timeoutMs: config.proposalTimeoutMs,
     maxOutputTokens: 5_000,
+    moduleId: "proposal_assessment",
+    onProviderResponse: recordProviderResponse,
+  }).then((assessment) => {
+    moduleRuns.push({
+      module_id: "proposal_assessment",
+      status: "complete",
+      started_at: new Date(assessmentStartedAt).toISOString(),
+      completed_at: new Date().toISOString(),
+      duration_ms: elapsed(assessmentStartedAt),
+      error_code: null,
+    });
+    return assessment;
   }).catch((error) => {
-    warnings.push(`Proposal assessment used a safeguard result: ${error instanceof Error ? error.message : "timed analysis failed"}`);
-    return fallbackProposalAssessment(workspace, documents, error);
+    const classified = recordModuleError(error, "proposal_assessment", assessmentStartedAt);
+    return fallbackProposalAssessment(workspace, documents, classified);
   });
 
+  const researchStartedAt = Date.now();
   const researchPromise = services.getOrResearchFunder(workspace, {
     research: () => services.parseStructured({
       model: config.analysisModel,
@@ -81,10 +117,25 @@ export async function runAnalysisPipeline(
       tools: [{ type: "web_search", search_context_size: "low" }],
       timeoutMs: config.funderTimeoutMs,
       maxOutputTokens: 4_000,
+      moduleId: "funder_research",
+      onProviderResponse: recordProviderResponse,
     }),
+  }).then((envelope) => {
+    moduleRuns.push({
+      module_id: "funder_research",
+      status: "complete",
+      started_at: new Date(researchStartedAt).toISOString(),
+      completed_at: new Date().toISOString(),
+      duration_ms: elapsed(researchStartedAt),
+      error_code: null,
+      cache_status: envelope.cacheStatus,
+    });
+    return envelope;
   }).catch((error) => {
-    warnings.push(`Funder research used a safeguard result: ${error instanceof Error ? error.message : "timed research failed"}`);
-    return { result: fallbackFunderResearch(workspace, error), cacheStatus: "fallback" };
+    const classified = recordModuleError(error, "funder_research", researchStartedAt, {
+      cache_status: "fallback",
+    });
+    return { result: fallbackFunderResearch(workspace, classified), cacheStatus: "fallback" };
   });
 
   const [assessment, researchEnvelope] = await Promise.all([assessmentPromise, researchPromise]);
@@ -92,6 +143,7 @@ export async function runAnalysisPipeline(
 
   await onStage("making_decision");
   const layer2StartedAt = Date.now();
+  const decisionStartedAt = Date.now();
   const decision = await services.parseStructured({
     model: config.fastModel,
     instructions: FAST_DECISION_PROMPT,
@@ -108,20 +160,40 @@ Complete the skeptical review and final adjudication.`,
     ownerHash,
     timeoutMs: config.decisionTimeoutMs,
     maxOutputTokens: 5_000,
+    moduleId: "decision",
+    onProviderResponse: recordProviderResponse,
+  }).then((result) => {
+    moduleRuns.push({
+      module_id: "decision",
+      status: "complete",
+      started_at: new Date(decisionStartedAt).toISOString(),
+      completed_at: new Date().toISOString(),
+      duration_ms: elapsed(decisionStartedAt),
+      error_code: null,
+    });
+    return result;
   }).catch((error) => {
-    warnings.push(`Decision layer used a safeguard result: ${error instanceof Error ? error.message : "timed decision failed"}`);
-    return fallbackDecision(assessment, researchEnvelope.result, error);
+    const classified = recordModuleError(error, "decision", decisionStartedAt);
+    return fallbackDecision(assessment, researchEnvelope.result, classified);
   });
   const layer2Ms = elapsed(layer2StartedAt);
+  const completedAt = new Date().toISOString();
+  const completionState = errors.length
+    ? "partial"
+    : warnings.length
+      ? "complete_with_warnings"
+      : "complete";
 
-  return {
+  const analysis = {
     schema_version: "2.0",
-    generated_at: new Date().toISOString(),
+    generated_at: completedAt,
     models: { fast: config.fastModel, analysis: config.analysisModel },
     pipeline: {
       version: "two_layer_fast_v1",
-      partial: warnings.length > 0,
+      status: completionState,
+      partial: completionState === "partial",
       warnings,
+      errors,
       funder_cache: researchEnvelope.cacheStatus,
       layer_1_ms: layer1Ms,
       layer_2_ms: layer2Ms,
@@ -133,4 +205,17 @@ Complete the skeptical review and final adjudication.`,
     reviewer_panel: decision.reviewer_panel,
     adjudication: decision.adjudication,
   };
+  analysis.manifest = createAnalysisManifest({
+    reviewId,
+    workspace,
+    documents,
+    correlationId,
+    startedAt: analysisStartedAt,
+    completedAt,
+    completionState,
+    moduleRuns,
+    providerRequests,
+    errors,
+  });
+  return analysis;
 }

@@ -41,6 +41,8 @@ only component allowed to access Neon and OpenAI.
 - `public/config.js`: runtime API URL copied into the frontend build
 - `render.yaml`: Render Blueprint
 - `docs/deployment.md`: deployment instructions
+- `docs/trust-baseline.md`: verified trust-gap baseline
+- `docs/build-1-trust-instrumentation.md`: local manifest and failure-semantics build
 
 ## Local development
 

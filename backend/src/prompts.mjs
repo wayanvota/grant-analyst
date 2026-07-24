@@ -10,6 +10,13 @@ Never estimate a funding probability.
 Every material conclusion must identify its evidence basis and confidence.
 `;
 
+export const RUBRIC_VERSION = "grant_due_diligence_1.0.0";
+export const PROMPT_VERSIONS = Object.freeze({
+  proposal_assessment: "1.0.0",
+  funder_research: "1.0.0",
+  decision: "1.0.0",
+});
+
 export const FACT_EXTRACTION_PROMPT = `${EVIDENCE_RULES}
 Extract confirmed and unresolved facts from the uploaded proposal package.
 Quote decisive eligibility language exactly and preserve filenames and page or section references when available.

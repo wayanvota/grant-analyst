@@ -50,6 +50,7 @@ test("health, metadata, security headers, and allowed CORS origin are correct", 
   assert.equal(metadata.data.sessionReviewLimit, 2);
   assert.equal(metadata.data.maxUploadMb, 15);
   assert.deepEqual(metadata.data.reviewStages, ["analyzing_inputs", "making_decision"]);
+  assert.ok(metadata.response.headers.get("x-correlation-id"));
   assert.equal("openaiApiKey" in metadata.data, false);
   assert.equal("databaseUrl" in metadata.data, false);
 });

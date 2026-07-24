@@ -5,13 +5,18 @@ import cors from "cors";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import multer from "multer";
+import { classifyAnalysisError, analysisErrorCodes } from "./analysis-errors.mjs";
+import { createAnalysisManifest, MANIFEST_VERSION, snapshotId } from "./analysis-manifest.mjs";
 import { config, assertRuntimeConfig } from "./config.mjs";
 import { healthcheck, query } from "./db.mjs";
-import { asyncRoute, cleanText, errorMiddleware, HttpError, newId, requestOwner } from "./http.mjs";
+import {
+  assignCorrelationId, asyncRoute, cleanText, errorMiddleware, HttpError, newId, requestOwner,
+} from "./http.mjs";
 import { deleteDocumentFile, uploadDocument } from "./openai-client.mjs";
 import { audit, ownedWorkspace, persistAnalysis } from "./persistence.mjs";
 import { markdownReport } from "./report.mjs";
 import { runAnalysisPipeline } from "./review-pipeline.mjs";
+import { persistedReviewState } from "./review-state.mjs";
 
 const allowedExtensions = new Set([
   "pdf", "txt", "md", "json", "html", "xml", "doc", "docx", "rtf", "odt",
@@ -38,8 +43,8 @@ async function workspaceBundle(workspaceId, ownerHash) {
   const [documents, reviews, facts, corrections] = await Promise.all([
     query(`SELECT id, category, source_type, filename, mime_type, size_bytes, processing_status, created_at
            FROM documents WHERE workspace_id = $1 AND owner_hash = $2 ORDER BY created_at DESC`, [workspaceId, ownerHash]),
-    query(`SELECT id, version, status, stage, review_type, eligibility_result, final_verdict,
-                  recommendation, confidence, score, error_message, created_at, completed_at
+    query(`SELECT id, version, status, stage, completion_state, review_type, eligibility_result, final_verdict,
+                  recommendation, confidence, score, error_code, error_message, correlation_id, created_at, completed_at
            FROM reviews WHERE workspace_id = $1 AND owner_hash = $2 ORDER BY version DESC`, [workspaceId, ownerHash]),
     query(`SELECT id, fact_key, extracted_value, confirmed_value, source_ref, confidence, confirmed_at, updated_at
            FROM facts WHERE workspace_id = $1 ORDER BY fact_key`, [workspaceId]),
@@ -63,7 +68,15 @@ async function enforceReviewQuota(ownerHash) {
   }
 }
 
-async function processReview({ reviewId, workspace, documents, ownerHash, version }) {
+async function processReview({
+  reviewId,
+  workspace,
+  documents,
+  ownerHash,
+  version,
+  correlationId,
+  analysisStartedAt,
+}) {
   if (activeReviews.has(reviewId)) return;
   activeReviews.add(reviewId);
   try {
@@ -71,33 +84,68 @@ async function processReview({ reviewId, workspace, documents, ownerHash, versio
       workspace,
       documents,
       ownerHash,
+      reviewId,
+      correlationId,
       onStage: async (stage) => {
         await query("UPDATE reviews SET stage = $1 WHERE id = $2", [stage, reviewId]);
       },
     });
     await persistAnalysis(reviewId, workspace.id, analysis);
     const final = analysis.adjudication;
+    const persistedState = persistedReviewState(analysis);
     await query(
-      `UPDATE reviews SET status='completed', stage='completed', eligibility_result=$1,
-       final_verdict=$2, recommendation=$3, confidence=$4, score=$5, result=$6::jsonb,
-       completed_at=NOW() WHERE id=$7`,
-      [final.eligibility, final.proposal_merit, final.recommendation, final.confidence,
-        final.diagnostic_score, JSON.stringify(analysis), reviewId],
+      `UPDATE reviews SET status=$1, stage=$2, completion_state=$3, eligibility_result=$4,
+       final_verdict=$5, recommendation=$6, confidence=$7, score=$8, result=$9::jsonb,
+       analysis_manifest=$10::jsonb, error_code=$11, completed_at=NOW() WHERE id=$12`,
+      [persistedState.status, persistedState.stage, persistedState.completionState,
+        final.eligibility, final.proposal_merit, final.recommendation, final.confidence,
+        final.diagnostic_score, JSON.stringify(analysis), JSON.stringify(analysis.manifest),
+        analysis.pipeline.errors[0]?.code || null, reviewId],
     );
-    await query("UPDATE workspaces SET status='reviewed', updated_at=NOW() WHERE id=$1", [workspace.id]);
+    await query("UPDATE workspaces SET status=$1, updated_at=NOW() WHERE id=$2", [
+      persistedState.workspaceStatus, workspace.id,
+    ]);
     await audit(ownerHash, "review.completed", "review", reviewId, workspace.id, {
-      version, recommendation: final.recommendation, score: final.diagnostic_score,
+      version,
+      completionState: persistedState.completionState,
+      recommendation: final.recommendation,
+      score: final.diagnostic_score,
+      correlationId,
     });
   } catch (error) {
     console.error(`Review ${reviewId} failed`, error);
+    const classified = classifyAnalysisError(error, "orchestrator");
+    const completedAt = new Date().toISOString();
+    const failureManifest = createAnalysisManifest({
+      reviewId,
+      workspace,
+      documents,
+      correlationId,
+      startedAt: analysisStartedAt,
+      completedAt,
+      completionState: "failed",
+      moduleRuns: [{
+        module_id: "orchestrator",
+        status: "failed",
+        started_at: analysisStartedAt,
+        completed_at: completedAt,
+        duration_ms: Math.max(0, Date.parse(completedAt) - Date.parse(analysisStartedAt)),
+        error_code: classified.code,
+      }],
+      providerRequests: [],
+      errors: [classified.toRecord()],
+    });
     await query(
-      `UPDATE reviews SET status='failed', stage='failed',
-       error_message='Analysis failed. Check the source materials and try again.',
-       completed_at=NOW() WHERE id=$1`,
-      [reviewId],
+      `UPDATE reviews SET status='failed', stage='failed', completion_state='failed',
+       error_code=$1, error_message=$2, analysis_manifest=$3::jsonb,
+       completed_at=NOW() WHERE id=$4`,
+      [classified.code, classified.message, JSON.stringify(failureManifest), reviewId],
     );
     await query("UPDATE workspaces SET status='review_failed', updated_at=NOW() WHERE id=$1", [workspace.id]);
-    await audit(ownerHash, "review.failed", "review", reviewId, workspace.id);
+    await audit(ownerHash, "review.failed", "review", reviewId, workspace.id, {
+      errorCode: classified.code,
+      correlationId,
+    });
   } finally {
     activeReviews.delete(reviewId);
   }
@@ -107,6 +155,7 @@ export function createApp() {
   const app = express();
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
+  app.use(assignCorrelationId);
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
   app.use(cors({
     origin(origin, callback) {
@@ -114,6 +163,7 @@ export function createApp() {
       return callback(new HttpError(403, "This website is not allowed to use the API."));
     },
     allowedHeaders: ["Content-Type", "X-Grant-Session"],
+    exposedHeaders: ["X-Correlation-ID"],
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   }));
   app.use(rateLimit({
@@ -171,7 +221,9 @@ export function createApp() {
       [id, request.ownerHash, values.organization, values.funder, values.opportunity, values.deadline,
         values.requestedAmount, values.geography, values.programArea, values.organizationType, values.proposalVersion],
     );
-    await audit(request.ownerHash, "workspace.created", "workspace", id, id);
+    await audit(request.ownerHash, "workspace.created", "workspace", id, id, {
+      correlationId: request.correlationId,
+    });
     response.status(201).json({ workspace: rows[0] });
   }));
 
@@ -193,7 +245,9 @@ export function createApp() {
        WHERE id=$${entries.length + 1} AND owner_hash=$${entries.length + 2}`,
       [...entries.map(([, value]) => value), request.params.id, request.ownerHash],
     );
-    await audit(request.ownerHash, "workspace.updated", "workspace", request.params.id, request.params.id);
+    await audit(request.ownerHash, "workspace.updated", "workspace", request.params.id, request.params.id, {
+      correlationId: request.correlationId,
+    });
     response.json(await workspaceBundle(request.params.id, request.ownerHash));
   }));
 
@@ -233,7 +287,10 @@ export function createApp() {
       );
       await query("UPDATE workspaces SET status='needs_rerun', updated_at=NOW() WHERE id=$1", [workspace.id]);
       await audit(request.ownerHash, "document.uploaded", "document", documentId, workspace.id, {
-        filename: request.file.originalname, category, sizeBytes: request.file.size,
+        filename: request.file.originalname,
+        category,
+        sizeBytes: request.file.size,
+        correlationId: request.correlationId,
       });
       response.status(201).json({ document: rows[0] });
     } catch (error) {
@@ -251,7 +308,9 @@ export function createApp() {
     await deleteDocumentFile(document.openai_file_id);
     await query("DELETE FROM documents WHERE id=$1 AND owner_hash=$2", [document.id, request.ownerHash]);
     await query("UPDATE workspaces SET status='needs_rerun', updated_at=NOW() WHERE id=$1", [document.workspace_id]);
-    await audit(request.ownerHash, "document.deleted", "document", document.id, document.workspace_id);
+    await audit(request.ownerHash, "document.deleted", "document", document.id, document.workspace_id, {
+      correlationId: request.correlationId,
+    });
     response.json({ deleted: true });
   }));
 
@@ -263,7 +322,7 @@ export function createApp() {
     );
     if (running.length) throw new HttpError(409, "A review is already running for this workspace.");
     const documents = await query(
-      `SELECT id,filename,category,source_type,openai_file_id FROM documents
+      `SELECT id,filename,category,source_type,content_sha256,openai_file_id FROM documents
        WHERE workspace_id=$1 AND owner_hash=$2 ORDER BY created_at`,
       [workspace.id, request.ownerHash],
     );
@@ -275,10 +334,12 @@ export function createApp() {
     );
     const version = versionRows[0]?.version || 1;
     const reviewId = newId("rev");
+    const analysisStartedAt = new Date().toISOString();
     await query(
       `INSERT INTO reviews
-       (id,workspace_id,owner_hash,version,status,stage,model,configuration,source_snapshot)
-       VALUES ($1,$2,$3,$4,'running','queued',$5,$6::jsonb,$7::jsonb)`,
+       (id,workspace_id,owner_hash,version,status,stage,completion_state,model,configuration,
+        source_snapshot,correlation_id,analysis_started_at)
+       VALUES ($1,$2,$3,$4,'running','queued','awaiting_analysis',$5,$6::jsonb,$7::jsonb,$8,$9)`,
       [reviewId, workspace.id, request.ownerHash, version, config.fastModel,
         JSON.stringify({
           pipeline: "two_layer_fast_v1",
@@ -289,11 +350,37 @@ export function createApp() {
           decisionTimeoutMs: config.decisionTimeoutMs,
           funderCacheDays: config.funderCacheDays,
         }),
-        JSON.stringify(documents.map(({ id, filename, category, source_type }) => ({ id, filename, category, source_type })))],
+        JSON.stringify(documents.map(({ id, filename, category, source_type, content_sha256 }) => ({
+          id, filename, category, source_type, content_sha256,
+        }))),
+        request.correlationId,
+        analysisStartedAt],
     );
     await query("UPDATE workspaces SET status='reviewing', updated_at=NOW() WHERE id=$1", [workspace.id]);
-    setImmediate(() => processReview({ reviewId, workspace, documents, ownerHash: request.ownerHash, version }));
-    response.status(202).json({ review: { id: reviewId, version, status: "running", stage: "queued" } });
+    await audit(request.ownerHash, "review.started", "review", reviewId, workspace.id, {
+      version,
+      correlationId: request.correlationId,
+      sourceSnapshotId: snapshotId(documents),
+    });
+    setImmediate(() => processReview({
+      reviewId,
+      workspace,
+      documents,
+      ownerHash: request.ownerHash,
+      version,
+      correlationId: request.correlationId,
+      analysisStartedAt,
+    }));
+    response.status(202).json({
+      review: {
+        id: reviewId,
+        version,
+        status: "running",
+        stage: "queued",
+        completion_state: "awaiting_analysis",
+        correlation_id: request.correlationId,
+      },
+    });
   }));
 
   app.get("/api/reviews/:id", asyncRoute(async (request, response) => {
@@ -309,6 +396,11 @@ export function createApp() {
     if (!review.result) throw new HttpError(409, "This review is not complete.");
     const workspace = await requireWorkspace(review.workspace_id, request.ownerHash);
     const format = request.query.format === "json" ? "json" : "markdown";
+    await audit(request.ownerHash, "review.exported", "review", review.id, workspace.id, {
+      format,
+      correlationId: request.correlationId,
+      reviewCorrelationId: review.correlation_id,
+    });
     if (format === "json") {
       response.attachment(`grant-review-v${review.version}.json`).type("application/json")
         .send(JSON.stringify({ workspace, review: { ...review, result: undefined }, analysis: review.result }, null, 2));
@@ -348,7 +440,9 @@ export function createApp() {
         targetId, field, previousValue || null, correctedValue, reason],
     );
     await query("UPDATE workspaces SET status='needs_rerun', updated_at=NOW() WHERE id=$1", [workspace.id]);
-    await audit(request.ownerHash, "correction.recorded", "correction", correctionId, workspace.id);
+    await audit(request.ownerHash, "correction.recorded", "correction", correctionId, workspace.id, {
+      correlationId: request.correlationId,
+    });
     response.status(201).json({ correction: { id: correctionId, previousValue, correctedValue } });
   }));
 
@@ -371,6 +465,7 @@ export function publicMeta() {
   return {
     service: "grant-analyst-api",
     reviewStages: ["analyzing_inputs", "making_decision"],
+    manifestVersion: MANIFEST_VERSION,
     dailyReviewLimit: config.maxDailyReviews,
     sessionReviewLimit: config.maxSessionDailyReviews,
     maxUploadMb: Math.round(config.maxUploadBytes / 1024 / 1024),
@@ -380,11 +475,52 @@ export function publicMeta() {
 export async function startServer() {
   assertRuntimeConfig();
   await import("../scripts/migrate.mjs");
-  await query(
-    `UPDATE reviews SET status='failed', stage='failed',
-     error_message='The server restarted before this review completed.', completed_at=NOW()
-     WHERE status='running' AND created_at < NOW() - INTERVAL '30 minutes'`,
+  const abandonedReviews = await query(
+    `SELECT r.id, r.workspace_id, r.correlation_id, r.source_snapshot, r.created_at,
+            r.analysis_started_at, w.proposal_version
+     FROM reviews r
+     JOIN workspaces w ON w.id=r.workspace_id
+     WHERE r.status='running' AND r.created_at < NOW() - INTERVAL '30 minutes'`,
   );
+  for (const review of abandonedReviews) {
+    const completedAt = new Date().toISOString();
+    const startedAt = new Date(review.analysis_started_at || review.created_at).toISOString();
+    const errorRecord = {
+      code: analysisErrorCodes.serviceRestart,
+      module_id: "orchestrator",
+      message: "The server restarted before this review completed.",
+      retryable: true,
+      provider_request_id: null,
+    };
+    const manifest = createAnalysisManifest({
+      reviewId: review.id,
+      workspace: {
+        id: review.workspace_id,
+        proposal_version: review.proposal_version,
+      },
+      documents: Array.isArray(review.source_snapshot) ? review.source_snapshot : [],
+      correlationId: review.correlation_id,
+      startedAt,
+      completedAt,
+      completionState: "failed",
+      moduleRuns: [{
+        module_id: "orchestrator",
+        status: "failed",
+        started_at: startedAt,
+        completed_at: completedAt,
+        duration_ms: Math.max(0, Date.parse(completedAt) - Date.parse(startedAt)),
+        error_code: analysisErrorCodes.serviceRestart,
+      }],
+      providerRequests: [],
+      errors: [errorRecord],
+    });
+    await query(
+      `UPDATE reviews SET status='failed', stage='failed', completion_state='failed',
+       error_code=$1, error_message=$2, analysis_manifest=$3::jsonb, completed_at=NOW()
+       WHERE id=$4`,
+      [analysisErrorCodes.serviceRestart, errorRecord.message, JSON.stringify(manifest), review.id],
+    );
+  }
   const app = createApp();
   return app.listen(config.port, "0.0.0.0", () => {
     console.log(`Grant Analyst API listening on port ${config.port}`);

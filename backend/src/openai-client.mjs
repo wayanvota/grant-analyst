@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import OpenAI, { toFile } from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
+import { AnalysisStageError, analysisErrorCodes, classifyAnalysisError } from "./analysis-errors.mjs";
 import { config } from "./config.mjs";
 
 let instance;
@@ -39,21 +40,42 @@ export async function parseStructured({
   tools,
   timeoutMs,
   maxOutputTokens,
+  moduleId = schemaName,
+  onProviderResponse,
 }) {
-  const response = await openai().responses.parse({
-    model,
-    instructions,
-    input: [{ role: "user", content }],
-    reasoning: { effort },
-    text: { format: zodTextFormat(schema, schemaName) },
-    safety_identifier: safetyIdentifier(ownerHash),
-    tools,
-    store: false,
-    max_output_tokens: maxOutputTokens,
-  }, {
-    timeout: timeoutMs,
-    maxRetries: 0,
-  });
-  if (!response.output_parsed) throw new Error(`${schemaName} returned no schema-validated output.`);
-  return response.output_parsed;
+  try {
+    const response = await openai().responses.parse({
+      model,
+      instructions,
+      input: [{ role: "user", content }],
+      reasoning: { effort },
+      text: { format: zodTextFormat(schema, schemaName) },
+      safety_identifier: safetyIdentifier(ownerHash),
+      tools,
+      store: false,
+      max_output_tokens: maxOutputTokens,
+    }, {
+      timeout: timeoutMs,
+      maxRetries: 0,
+    });
+    const providerRequestId = response._request_id || response.request_id || null;
+    onProviderResponse?.({
+      module_id: moduleId,
+      provider_request_id: providerRequestId,
+      response_id: response.id || null,
+      model,
+    });
+    if (!response.output_parsed) {
+      throw new AnalysisStageError({
+        code: analysisErrorCodes.schema,
+        moduleId,
+        message: "The provider response did not satisfy the required output schema.",
+        retryable: true,
+        providerRequestId,
+      });
+    }
+    return response.output_parsed;
+  } catch (error) {
+    throw classifyAnalysisError(error, moduleId);
+  }
 }

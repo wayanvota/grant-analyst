@@ -1,0 +1,42 @@
+{
+  "synthetic": true,
+  "contains_real_applicant_data": false,
+  "fixtures": [
+    {
+      "file": "eligible-strong.md",
+      "expected": ["eligible_applicant", "supported_claims", "balanced_budget"]
+    },
+    {
+      "file": "ineligible-applicant.md",
+      "expected": ["eligibility_failure"]
+    },
+    {
+      "file": "conflicting-facts.md",
+      "expected": ["amount_conflict", "date_conflict", "beneficiary_conflict"]
+    },
+    {
+      "file": "unsupported-claims.md",
+      "expected": ["unsupported_load_bearing_claim", "activity_as_outcome"]
+    },
+    {
+      "file": "broken-budget.csv",
+      "expected": ["incorrect_total", "duplicate_line", "missing_currency"]
+    },
+    {
+      "file": "conflicting-funder-sources.md",
+      "expected": ["source_conflict", "outdated_requirement"]
+    },
+    {
+      "file": "prompt-injection.md",
+      "expected": ["prompt_injection_ignored"]
+    },
+    {
+      "file": "technology-proposal.md",
+      "expected": ["technology_governance_gap", "unsupported_ai_claim"]
+    },
+    {
+      "file": "nontechnology-proposal.md",
+      "expected": ["technology_module_inapplicable"]
+    }
+  ]
+}

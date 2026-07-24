@@ -5,6 +5,7 @@ import { runAnalysisPipeline } from "../src/review-pipeline.mjs";
 import { FastDecisionSchema, FunderResearchSchema, ProposalAssessmentSchema } from "../src/schemas.mjs";
 
 const workspace = {
+  id: "wrk_test",
   organization: "Test Applicant",
   funder: "Test Foundation",
   opportunity: "Test Opportunity",
@@ -44,10 +45,18 @@ test("the pipeline runs assessment and funder research in parallel, then decides
     workspace,
     documents,
     ownerHash: "owner",
+    reviewId: "rev_test",
+    correlationId: "req_test",
     onStage: async (stage) => stages.push(stage),
   }, {
-    parseStructured: async ({ schemaName }) => {
+    parseStructured: async ({ schemaName, moduleId, onProviderResponse }) => {
       parseCalls += 1;
+      onProviderResponse({
+        module_id: moduleId,
+        provider_request_id: `provider_${moduleId}`,
+        response_id: `response_${moduleId}`,
+        model: "fixture-model",
+      });
       if (schemaName === "proposal_assessment_fast") {
         started.assessment = Date.now();
         await pause(35);
@@ -71,8 +80,14 @@ test("the pipeline runs assessment and funder research in parallel, then decides
   assert.deepEqual(stages, ["analyzing_inputs", "making_decision"]);
   assert.equal(result.schema_version, "2.0");
   assert.equal(result.pipeline.version, "two_layer_fast_v1");
+  assert.equal(result.pipeline.status, "complete");
   assert.equal(result.pipeline.partial, false);
   assert.equal(result.pipeline.funder_cache, "miss");
+  assert.equal(result.manifest.review_id, "rev_test");
+  assert.equal(result.manifest.correlation_id, "req_test");
+  assert.equal(result.manifest.completion_state, "complete");
+  assert.equal(result.manifest.modules.length, 3);
+  assert.equal(result.manifest.provider.requests.length, 2);
   assert.ok(result.pipeline.total_ms < 100);
 });
 
@@ -90,6 +105,9 @@ test("a failed layer returns a marked, safe partial result", async () => {
     getOrResearchFunder: async () => ({ result: funder, cacheStatus: "hit" }),
   });
   assert.equal(result.pipeline.partial, true);
+  assert.equal(result.pipeline.status, "partial");
+  assert.equal(result.manifest.completion_state, "partial");
+  assert.ok(result.manifest.errors.every((error) => error.code));
   assert.equal(result.adjudication.recommendation, "no_go");
   assert.ok(result.pipeline.warnings.length >= 2);
   assert.doesNotThrow(() => FastDecisionSchema.parse({

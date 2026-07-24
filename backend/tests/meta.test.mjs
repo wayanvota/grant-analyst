@@ -11,6 +11,7 @@ test("public metadata exposes limits without secrets", async () => {
   const metadata = publicMeta();
   assert.equal(metadata.service, "grant-analyst-api");
   assert.equal(metadata.sessionReviewLimit, 2);
+  assert.equal(metadata.manifestVersion, "1.0");
   assert.equal("openaiApiKey" in metadata, false);
   assert.equal("databaseUrl" in metadata, false);
 });

@@ -19,7 +19,8 @@ export type DocumentRow = {
 };
 export type ReviewRow = {
   id: string; version: number; status: string; stage: string; recommendation: string | null;
-  score: number | null; error_message?: string | null; created_at: string;
+  completion_state?: string | null; score: number | null; error_code?: string | null;
+  error_message?: string | null; correlation_id?: string | null; created_at: string;
 };
 export type FactRow = {
   id: string; fact_key: string; extracted_value: string | null; confirmed_value: string | null;
@@ -30,8 +31,16 @@ export type Bundle = {
 };
 export type Analysis = {
   generated_at: string;
+  manifest?: {
+    manifest_version: string; correlation_id: string | null; completion_state: string;
+    source_snapshot_id: string; rubric_version: string;
+    prompts: Record<string, { version: string; sha256: string }>;
+    modules: Array<{ module_id: string; version: string; status: string; error_code: string | null }>;
+    errors: Array<{ code: string; module_id: string; message: string }>;
+  };
   pipeline?: {
-    version: string; partial: boolean; warnings: string[]; funder_cache: string;
+    version: string; status?: string; partial: boolean; warnings: string[];
+    errors?: Array<{ code: string; module_id: string; message: string }>; funder_cache: string;
     layer_1_ms: number; layer_2_ms: number; total_ms: number;
   };
   adjudication: {

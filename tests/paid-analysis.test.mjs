@@ -61,7 +61,9 @@ async function waitForReview(run) {
       { session: run.session },
     ));
     assert.equal(response.status, 200, JSON.stringify(data));
-    if (data.review.status === "completed") return data.review;
+    if (["complete", "complete_with_warnings", "partial", "completed"].includes(data.review.status)) {
+      return data.review;
+    }
     if (data.review.status === "failed") {
       throw new Error(`Paid analysis ${run.index} failed: ${data.review.error_message}`);
     }
@@ -82,8 +84,9 @@ test("three paid two-layer production analyses complete fully within 90 seconds"
     }
     const reviews = await Promise.all(runs.map(waitForReview));
     for (const review of reviews) {
-      assert.equal(review.status, "completed");
-      assert.equal(review.stage, "completed");
+      assert.equal(review.status, "complete");
+      assert.equal(review.stage, "complete");
+      assert.equal(review.completion_state, "complete");
       assert.equal(review.model, "gpt-5.6-luna");
       assert.equal(review.result.schema_version, "2.0");
       assert.equal(review.result.pipeline.version, "two_layer_fast_v1");
@@ -96,6 +99,8 @@ test("three paid two-layer production analyses complete fully within 90 seconds"
       assert.ok(review.result.adjudication.recommendation);
       assert.ok(Number.isFinite(review.result.adjudication.diagnostic_score));
       assert.ok(review.completed_at);
+      assert.equal(review.result.manifest.completion_state, "complete");
+      assert.match(review.result.manifest.source_snapshot_id, /^ss_[a-f0-9]{64}$/);
     }
   } finally {
     await Promise.allSettled(runs.map((run) => deleteWorkspace(run.session, run.workspaceId)));
