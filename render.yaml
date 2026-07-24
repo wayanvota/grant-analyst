@@ -23,7 +23,7 @@ services:
       - key: CORS_ORIGINS
         value: https://wayan.com,https://www.wayan.com
       - key: OPENAI_ANALYSIS_MODEL
-        value: gpt-5.6
+        value: gpt-5.6-sol
       - key: OPENAI_FAST_MODEL
         value: gpt-5.6-terra
       - key: MAX_DAILY_REVIEWS
