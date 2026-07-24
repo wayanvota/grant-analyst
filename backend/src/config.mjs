@@ -22,7 +22,7 @@ export const config = {
   maxUploadBytes: integer("MAX_UPLOAD_MB", 15) * 1024 * 1024,
   funderCacheDays: integer("FUNDER_CACHE_DAYS", 14),
   proposalTimeoutMs: integer("PROPOSAL_TIMEOUT_MS", 28000),
-  funderTimeoutMs: integer("FUNDER_TIMEOUT_MS", 18000),
+  funderTimeoutMs: integer("FUNDER_TIMEOUT_MS", 28000),
   decisionTimeoutMs: integer("DECISION_TIMEOUT_MS", 26000),
 };
 

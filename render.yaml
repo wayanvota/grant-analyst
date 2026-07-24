@@ -37,6 +37,6 @@ services:
       - key: PROPOSAL_TIMEOUT_MS
         value: "28000"
       - key: FUNDER_TIMEOUT_MS
-        value: "18000"
+        value: "28000"
       - key: DECISION_TIMEOUT_MS
         value: "26000"

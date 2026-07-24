@@ -113,7 +113,7 @@ Defaults are intentionally conservative:
 - 15 MB per uploaded document
 - 14 days for cached funder research
 - 28 seconds for proposal assessment
-- 18 seconds for uncached funder research
+- 28 seconds for uncached funder research
 - 26 seconds for the final decision layer
 
 Adjust `MAX_DAILY_REVIEWS`, `MAX_SESSION_DAILY_REVIEWS`, `MAX_UPLOAD_MB`,
