@@ -13,7 +13,7 @@ test("static frontend keeps secrets behind the Render API", async () => {
   assert.match(app, /Five damaging questions/);
   assert.match(app, /Grant review progress/);
   assert.match(app, /Layer \$\{visibleIndex \+ 1\} of \$\{reviewStages\.length\}/);
-  assert.match(app, /fast pipeline targets completion in under one minute/);
+  assert.match(app, /full review may take up to 90 seconds/);
   assert.match(config, /onrender\.com/);
   assert.doesNotMatch(`${api}${app}${config}`, /OPENAI_API_KEY|DATABASE_URL/);
 });

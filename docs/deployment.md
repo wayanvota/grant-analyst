@@ -112,15 +112,16 @@ Defaults are intentionally conservative:
 - 12 documents per workspace
 - 15 MB per uploaded document
 - 14 days for cached funder research
-- 28 seconds for proposal assessment
-- 28 seconds for uncached funder research
-- 26 seconds for the final decision layer
+- 45 seconds for proposal assessment
+- 45 seconds for uncached funder research
+- 40 seconds for the final decision layer
 
 Adjust `MAX_DAILY_REVIEWS`, `MAX_SESSION_DAILY_REVIEWS`, `MAX_UPLOAD_MB`,
 `FUNDER_CACHE_DAYS`, `PROPOSAL_TIMEOUT_MS`, `FUNDER_TIMEOUT_MS`, and
 `DECISION_TIMEOUT_MS` in Render. Keep global limits low until you have observed
 real token use.
 
-The two sequential layer budgets total 54 seconds. Database and network
-overhead can add a few seconds, so the production test treats 60 seconds as the
+The two sequential layer budgets total 85 seconds because proposal assessment
+and funder research share the first 45-second window. Database and network
+overhead can add a few seconds, so the production test treats 90 seconds as the
 maximum acceptable analysis runtime recorded by the backend.

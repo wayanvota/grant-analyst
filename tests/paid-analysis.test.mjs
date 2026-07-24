@@ -12,7 +12,7 @@ import {
 const enabled = process.env.RUN_PAID_OPENAI_TESTS === "1";
 const runCount = Number.parseInt(process.env.PAID_TEST_RUNS || "3", 10);
 const pollIntervalMs = 5_000;
-const maxWaitMs = 3 * 60 * 1_000;
+const maxWaitMs = 4 * 60 * 1_000;
 
 const proposal = `SYNTHETIC TEST PROPOSAL
 
@@ -70,7 +70,7 @@ async function waitForReview(run) {
   throw new Error(`Paid analysis ${run.index} did not finish within ${maxWaitMs / 60_000} minutes.`);
 }
 
-test("three paid two-layer production analyses complete fully in under one minute", {
+test("three paid two-layer production analyses complete fully within 90 seconds", {
   skip: !enabled,
   timeout: maxWaitMs + 300_000,
 }, async () => {
@@ -89,7 +89,7 @@ test("three paid two-layer production analyses complete fully in under one minut
       assert.equal(review.result.pipeline.version, "two_layer_fast_v1");
       assert.equal(review.result.pipeline.partial, false,
         `Run ${review.id} was partial: ${review.result.pipeline.warnings.join(" | ")}`);
-      assert.ok(review.result.pipeline.total_ms <= 60_000,
+      assert.ok(review.result.pipeline.total_ms <= 90_000,
         `Run ${review.id} took ${review.result.pipeline.total_ms}ms`);
       assert.equal(review.result.models.analysis, "gpt-5.6-terra");
       assert.equal(review.result.models.fast, "gpt-5.6-luna");

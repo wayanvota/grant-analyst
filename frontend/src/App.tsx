@@ -350,14 +350,27 @@ function NewWorkspace({ form, setForm, onSubmit, busy }: {
 function ReviewProgress({ stage, startedAt, now }: { stage: string; startedAt: number; now: number }) {
   const activeIndex = reviewStages.findIndex(([key]) => key === stage);
   const visibleIndex = activeIndex >= 0 ? activeIndex : 0;
-  const progress = stage === "completed" ? 100 : stage === "queued"
-    ? 4
-    : ((visibleIndex + 1) / reviewStages.length) * 100;
   const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const progress = stage === "completed" ? 100 : stage === "queued"
+    ? Math.min(8, 4 + elapsedSeconds)
+    : stage === "analyzing_inputs"
+      ? Math.min(55, 8 + (elapsedSeconds / 45) * 47)
+      : Math.min(96, 55 + (Math.max(0, elapsedSeconds - 30) / 55) * 41);
   const elapsed = elapsedSeconds < 60
     ? `${elapsedSeconds}s`
     : `${Math.floor(elapsedSeconds / 60)}m ${String(elapsedSeconds % 60).padStart(2, "0")}s`;
   const current = reviewStages[visibleIndex];
+  const activity = stage === "queued"
+    ? "Securing the workspace and preparing your source files."
+    : stage === "analyzing_inputs"
+      ? elapsedSeconds < 15
+        ? "Reading the proposal and mapping its core claims."
+        : elapsedSeconds < 35
+          ? "Testing evidence, feasibility, budget, and eligibility."
+          : "Verifying public funder sources and resolving evidence gaps."
+      : elapsedSeconds < 65
+        ? "Building the strongest funding and rejection cases."
+        : "Auditing citations and ranking the revisions that could change the decision.";
 
   return <section className="review-progress" role="status" aria-live="polite">
     <div className="review-progress-head">
@@ -379,8 +392,8 @@ function ReviewProgress({ stage, startedAt, now }: { stage: string; startedAt: n
         <span>{complete ? "✓" : String(index + 1).padStart(2, "0")}</span><strong>{title}</strong>
       </li>;
     })}</ol>
-    <p>{stage === "queued" ? "The server accepted your documents and is preparing the first analysis stage." : current[2]}</p>
-    <small>The review continues on the server while this page checks for updates. The fast pipeline targets completion in under one minute.</small>
+    <p>{activity}</p>
+    <small>{current[2]} The full review may take up to 90 seconds and continues safely if this page refreshes.</small>
   </section>;
 }
 

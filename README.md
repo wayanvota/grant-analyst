@@ -91,7 +91,7 @@ npm run test:live
 
 The paid suite is opt-in and never runs in normal CI. It starts exactly three
 two-layer OpenAI reviews with synthetic proposals, validates that each complete
-result finishes within 60 seconds, and deletes the test workspaces and OpenAI
+result finishes within 90 seconds, and deletes the test workspaces and OpenAI
 files afterward:
 
 ```bash

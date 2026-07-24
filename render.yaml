@@ -35,8 +35,8 @@ services:
       - key: FUNDER_CACHE_DAYS
         value: "14"
       - key: PROPOSAL_TIMEOUT_MS
-        value: "28000"
+        value: "45000"
       - key: FUNDER_TIMEOUT_MS
-        value: "28000"
+        value: "45000"
       - key: DECISION_TIMEOUT_MS
-        value: "26000"
+        value: "40000"
