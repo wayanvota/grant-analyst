@@ -79,6 +79,28 @@ npm test
 npm run build
 ```
 
+The deterministic end-to-end suite builds the production frontend, runs it
+against a local in-memory API fixture, and exercises exactly 10 user-behavior
+and 10 adversarial categories in Chromium:
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+CI uses `npm run test:ci` and does not require Neon, OpenAI, or production
+credentials. See [E2E-TEST-REPORT.md](E2E-TEST-REPORT.md) for the category map
+and current evidence.
+
+An optional one-request OpenAI contract smoke test is excluded from CI:
+
+```bash
+OPENAI_API_KEY=... npm run test:live:openai
+```
+
+Run it only with an authorized local key. Never commit that key or add it to
+the deterministic workflow.
+
 The FTP artifact is the contents of `frontend/dist/`, not the directory itself.
 
 ## Production tests
