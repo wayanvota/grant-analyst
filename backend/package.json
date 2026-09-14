@@ -15,14 +15,14 @@
     "migrate": "node --env-file-if-exists=../.env.local scripts/migrate.mjs"
   },
   "dependencies": {
-    "@neondatabase/serverless": "1.0.2",
-    "cors": "2.8.5",
-    "dotenv": "17.2.3",
-    "express": "5.1.0",
-    "express-rate-limit": "8.6.0",
-    "helmet": "8.1.0",
+    "@neondatabase/serverless": "1.1.0",
+    "cors": "2.8.6",
+    "dotenv": "17.4.2",
+    "express": "5.2.1",
+    "express-rate-limit": "8.7.0",
+    "helmet": "8.3.0",
     "multer": "2.3.0",
     "openai": "6.17.0",
-    "zod": "4.3.6"
+    "zod": "4.6.2"
   }
 }
