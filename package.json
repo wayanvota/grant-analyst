@@ -4,7 +4,7 @@
   "private": true,
   "description": "Evidence-first grant proposal due diligence, with a static frontend and a Render/Neon/OpenAI backend.",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.23.4 <23"
   },
   "workspaces": [
     "frontend",
